@@ -295,3 +295,270 @@ def test_claim_workspace_shows_declaration_and_signer_name(client: TestClient):
     assert "Eleanor Vance" in html
     assert "I confirm the information in this claim is true to the best of my knowledge." in html
     assert 'class="declaration-signature-img"' in html
+
+
+def test_what_happened_step_answers_saved_and_shown_in_loss_notice(client: TestClient):
+    claim_id, token = _create_claim_and_token(client)
+    for slot in ("wide", "damage", "plate", "vin"):
+        client.post(
+            f"/c/{token}/photo/{slot}",
+            content=TINY_JPEG + slot.encode(),
+            headers={"Content-Type": "image/jpeg"},
+        )
+
+    # Claimant answers step "What happened": other_vehicle="Yes", police="Yes", drivable="Yes"
+    ans = {
+        "incident_type": "Crash with another vehicle",
+        "date": "2026-11-14",
+        "time": "20:37",
+        "place": "Elm St and 5th Ave",
+        "city": "San Jose",
+        "state": "CA",
+        "statement": "Another car backed into me at the intersection.",
+        "other_vehicle": "Yes",
+        "police": "Yes",
+        "drivable": "Yes",
+        "parts": ["Rear bumper"],
+        "other_parts_note": "None",
+    }
+    resp_ans = client.post(f"/c/{token}/answers", json=ans)
+    assert resp_ans.status_code == 200
+
+    # Verify answers in SQLite
+    conn = get_connection()
+    c = conn.execute("SELECT answers_json FROM claims WHERE id = ?", (claim_id,)).fetchone()
+    conn.close()
+    stored = json.loads(c["answers_json"])
+    assert stored["other_vehicle"] == "Yes"
+    assert stored["police"] == "Yes"
+    assert stored["drivable"] == "Yes"
+
+    # Submit claim
+    submit_resp = client.post(
+        f"/c/{token}/submit",
+        json={
+            "signer_name": "Jane Claimant",
+            "confirmed": True,
+            "signature": SAMPLE_SIG,
+            "answers": ans,
+        },
+        headers={"Accept": "application/json"},
+    )
+    assert submit_resp.status_code == 200
+
+    # View Loss Notice in console
+    report_resp = client.get(f"/console/claims/{claim_id}")
+    assert report_resp.status_code == 200
+    html = report_resp.text
+
+    # Loss Notice must display every chosen answer, never "N/A"
+    assert "Was another vehicle involved?" in html
+    assert "Were police contacted?" in html
+    assert "Can you drive it?" in html
+
+    # Extract table rows
+    other_veh_match = re.search(
+        r"Was another vehicle involved\?</td>\s*<td class=\"paper-val\">(.*?)</td>",
+        html,
+    )
+    assert other_veh_match, "Row for other vehicle not found"
+    assert other_veh_match.group(1).strip() == "Yes"
+    assert "N/A" not in other_veh_match.group(1)
+
+    police_match = re.search(
+        r"Were police contacted\?</td>\s*<td class=\"paper-val\">(.*?)</td>",
+        html,
+    )
+    assert police_match, "Row for police not found"
+    assert police_match.group(1).strip() == "Yes"
+
+    drivable_match = re.search(
+        r"Can you drive it\?</td>\s*<td class=\"paper-val\">(.*?)</td>",
+        html,
+    )
+    assert drivable_match, "Row for drivable not found"
+    assert drivable_match.group(1).strip() == "Yes"
+
+
+def test_what_happened_hyphenated_other_vehicle_saved(client: TestClient):
+    claim_id, token = _create_claim_and_token(client)
+    for slot in ("wide", "damage", "plate", "vin"):
+        client.post(
+            f"/c/{token}/photo/{slot}",
+            content=TINY_JPEG + slot.encode(),
+            headers={"Content-Type": "image/jpeg"},
+        )
+
+    # Post with hyphenated key "other-vehicle" as client DOM might send
+    ans = {
+        "incident_type": "Crash with another vehicle",
+        "date": "2026-11-14",
+        "statement": "T-boned at a light.",
+        "other-vehicle": "Yes",
+        "police": "No",
+        "drivable": "No",
+        "parts": ["Front bumper"],
+    }
+    client.post(f"/c/{token}/answers", json=ans)
+    client.post(
+        f"/c/{token}/submit",
+        json={
+            "signer_name": "Jane Claimant",
+            "confirmed": True,
+            "signature": SAMPLE_SIG,
+            "answers": ans,
+        },
+        headers={"Accept": "application/json"},
+    )
+
+    report_resp = client.get(f"/console/claims/{claim_id}")
+    html = report_resp.text
+    other_veh_match = re.search(
+        r"Was another vehicle involved\?</td>\s*<td class=\"paper-val\">(.*?)</td>",
+        html,
+    )
+    assert other_veh_match
+    assert other_veh_match.group(1).strip() == "Yes"
+
+
+def test_loss_notice_empty_optional_answers_show_not_given_and_readable_dates(client: TestClient):
+    claim_id, token = _create_claim_and_token(client)
+    for slot in ("wide", "damage", "plate", "vin"):
+        client.post(
+            f"/c/{token}/photo/{slot}",
+            content=TINY_JPEG + slot.encode(),
+            headers={"Content-Type": "image/jpeg"},
+        )
+
+    # Minimal answers: omit time, place, other_vehicle, police, other_parts_note
+    ans = {
+        "statement": "Hit a tree branch on a windy day.",
+        "parts": ["Hood"],
+    }
+    client.post(f"/c/{token}/answers", json=ans)
+    client.post(
+        f"/c/{token}/submit",
+        json={
+            "signer_name": "Jane Claimant",
+            "confirmed": True,
+            "signature": SAMPLE_SIG,
+            "answers": ans,
+        },
+        headers={"Accept": "application/json"},
+    )
+
+    report_resp = client.get(f"/console/claims/{claim_id}")
+    html = report_resp.text
+
+    # Empty optional answers in Loss Notice show "Not given" instead of "N/A"
+    assert "Automobile Loss Notice" in html
+    loss_notice_start = html.find("Automobile Loss Notice")
+    loss_notice_end = html.find("Digital signature") if "Digital signature" in html else len(html)
+    loss_notice_html = html[loss_notice_start:loss_notice_end]
+    assert "Not given" in loss_notice_html
+    assert "N/A" not in loss_notice_html
+
+    # Check Date of the loss & Signed at readable format
+    date_loss_match = re.search(
+        r"Date of the loss</td>\s*<td class=\"paper-val\">(.*?)</td>",
+        html,
+    )
+    assert date_loss_match
+    date_loss_val = date_loss_match.group(1).strip()
+    # Readable format like "Nov 14, 2026" or "Nov 14, 2026, 8:37 PM"
+    assert re.search(r"[A-Z][a-z]{2} \d{1,2}, \d{4}", date_loss_val), f"Unexpected date of loss format: {date_loss_val}"
+    assert "T" not in date_loss_val, f"Raw ISO timestamp found in date of loss: {date_loss_val}"
+
+    signed_at_match = re.search(
+        r"Signed at</td>\s*<td class=\"paper-val\">(.*?)</td>",
+        html,
+    )
+    assert signed_at_match
+    signed_at_val = signed_at_match.group(1).strip()
+    assert re.search(r"[A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M", signed_at_val), f"Unexpected signed at format: {signed_at_val}"
+    assert "T" not in signed_at_val, f"Raw ISO timestamp found in signed at: {signed_at_val}"
+
+
+def test_inline_svg_favicon_present_on_every_page(client: TestClient):
+    claim_id, token = _create_claim_and_token(client)
+
+    pages_to_check = [
+        "/console",
+        "/console/new",
+        f"/console/claims/{claim_id}",
+        "/verify",
+        f"/c/{token}",
+        f"/c/{token}/complete",
+    ]
+
+    expected_favicon_needle = 'link rel="icon" href="data:image/svg+xml'
+    for page in pages_to_check:
+        resp = client.get(page)
+        assert resp.status_code == 200, f"Page {page} returned {resp.status_code}"
+        assert expected_favicon_needle in resp.text, f"Favicon missing on {page}"
+        # Confirm blue rounded square and white shield
+        assert "%232563eb" in resp.text
+        assert "%23ffffff" in resp.text
+
+    # /favicon.ico request should not 404
+    fav_resp = client.get("/favicon.ico")
+    assert fav_resp.status_code in (200, 204)
+
+
+def test_captured_photo_session_code_watermark_in_bottom_left(client: TestClient):
+    _, token = _create_claim_and_token(client)
+    resp = client.get(f"/c/{token}")
+    assert resp.status_code == 200
+    html = resp.text
+
+    # Check that watermark canvas code positions at bottom-left corner
+    assert "bottom-left" in html
+    # Check dark label background
+    assert "rgba(15, 23, 42" in html or "rgba(0, 0, 0" in html
+    # Check mono font
+    assert "IBM Plex Mono" in html
+
+
+def test_map_parts_unmapped_parts_returns_none_and_damage_location_unchecked(client: TestClient):
+    claim_id, token = _create_claim_and_token(client)
+    for slot in ("wide", "damage", "plate", "vin"):
+        client.post(
+            f"/c/{token}/photo/{slot}",
+            content=TINY_JPEG + slot.encode(),
+            headers={"Content-Type": "image/jpeg"},
+        )
+
+    # Claimant selected only "Roof" (does not map to front/rear/left/right)
+    ans = {
+        "statement": "Tree fell on roof while parked.",
+        "parts": ["Roof"],
+        "drivable": "Yes",
+    }
+    ans_resp = client.post(f"/c/{token}/answers", json=ans)
+    assert ans_resp.status_code == 200
+    assert ans_resp.json()["claimed_damage_area"] is None
+
+    # Check DB claimed_damage_area is None
+    conn = get_connection()
+    row = conn.execute("SELECT claimed_damage_area FROM claims WHERE id = ?", (claim_id,)).fetchone()
+    conn.close()
+    assert row["claimed_damage_area"] is None
+
+    # Submit claim
+    client.post(
+        f"/c/{token}/submit",
+        json={
+            "signer_name": "Jane Claimant",
+            "confirmed": True,
+            "signature": SAMPLE_SIG,
+            "answers": ans,
+        },
+        headers={"Accept": "application/json"},
+    )
+
+    # Check damage_location finding is unchecked
+    report_resp = client.get(f"/console/claims/{claim_id}")
+    assert report_resp.status_code == 200
+    html = report_resp.text
+    assert "Claimed damage area is not specified" in html
+

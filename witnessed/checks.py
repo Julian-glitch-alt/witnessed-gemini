@@ -36,7 +36,7 @@ def _normalize_area(val: str | None) -> str | None:
     return cleaned
 
 
-def map_parts_to_claimed_area(parts: list[str]) -> str:
+def map_parts_to_claimed_area(parts: list[str]) -> str | None:
     front_parts = {
         "front bumper",
         "hood",
@@ -81,7 +81,7 @@ def map_parts_to_claimed_area(parts: list[str]) -> str:
             elif "right" in cleaned:
                 counts["right"] += 1
 
-    best_area = "rear"
+    best_area = None
     best_count = 0
     for area in ("front", "rear", "left", "right"):
         if counts[area] > best_count:

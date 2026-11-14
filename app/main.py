@@ -101,6 +101,58 @@ def format_relative_time(iso_str: str | None) -> str:
         return "recently"
 
 
+def format_readable_datetime(val: Any, time_val: Any = None) -> str:
+    if not val:
+        return "Not given"
+    s = str(val).strip()
+    if not s or s.lower() in ("n/a", "none", "null", "not given"):
+        return "Not given"
+
+    t_str = str(time_val).strip() if time_val else ""
+    if t_str.lower() in ("n/a", "none", "null", "not given"):
+        t_str = ""
+
+    try:
+        if len(s) == 10 and s.count("-") == 2:
+            d = datetime.strptime(s, "%Y-%m-%d").date()
+            if t_str:
+                t = None
+                for fmt in ("%H:%M", "%H:%M:%S", "%I:%M %p", "%I:%M%p"):
+                    try:
+                        t = datetime.strptime(t_str, fmt).time()
+                        break
+                    except ValueError:
+                        pass
+                if t:
+                    dt = datetime.combine(d, t)
+                    hour_str = dt.strftime("%I:%M %p").lstrip("0")
+                    return f"{dt.strftime('%b')} {dt.day}, {dt.year}, {hour_str}"
+            return f"{d.strftime('%b')} {d.day}, {d.year}"
+        else:
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is not None:
+                dt = dt.astimezone()
+            hour_str = dt.strftime("%I:%M %p").lstrip("0")
+            return f"{dt.strftime('%b')} {dt.day}, {dt.year}, {hour_str}"
+    except Exception:
+        return s
+
+
+def format_readable_time(time_val: Any) -> str:
+    if not time_val:
+        return "Not given"
+    s = str(time_val).strip()
+    if not s or s.lower() in ("n/a", "none", "null", "not given"):
+        return "Not given"
+    for fmt in ("%H:%M", "%H:%M:%S", "%I:%M %p", "%I:%M%p"):
+        try:
+            t = datetime.strptime(s, fmt).time()
+            return datetime.combine(date(2000, 1, 1), t).strftime("%I:%M %p").lstrip("0")
+        except ValueError:
+            pass
+    return s
+
+
 def get_claimant_initials(name: str | None) -> str:
     if not name or not name.strip():
         return "CL"
@@ -198,6 +250,11 @@ def generate_qr_data_uri(data_url: str) -> str:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=204)
 
 
 @app.get("/", response_class=RedirectResponse)
@@ -543,10 +600,14 @@ async def save_answers(request: Request, token: str):
     state_val = data.get("state")
     statement_val = data.get("statement")
     other_vehicle_val = data.get("other_vehicle")
+    if other_vehicle_val is None:
+        other_vehicle_val = data.get("other-vehicle")
     police_val = data.get("police")
     drivable_val = data.get("drivable")
     parts_val = data.get("parts")
     other_parts_note_val = data.get("other_parts_note")
+    if other_parts_note_val is None:
+        other_parts_note_val = data.get("other_parts")
 
     for field_name, field_val in [
         ("incident_type", incident_type),
@@ -593,7 +654,7 @@ async def save_answers(request: Request, token: str):
         "city": city_val if city_val is not None else existing_answers.get("city"),
         "state": state_val if state_val is not None else existing_answers.get("state"),
         "statement": statement_val if statement_val is not None else existing_answers.get("statement"),
-        "other_vehicle": other_vehicle_val if other_vehicle_val is not None else existing_answers.get("other_vehicle"),
+        "other_vehicle": other_vehicle_val if other_vehicle_val is not None else (existing_answers.get("other_vehicle") or existing_answers.get("other-vehicle")),
         "police": police_val if police_val is not None else existing_answers.get("police"),
         "drivable": drivable_val if drivable_val is not None else existing_answers.get("drivable"),
         "parts": parts_list if parts_val is not None else existing_answers.get("parts", []),
@@ -608,16 +669,27 @@ async def save_answers(request: Request, token: str):
     )
 
     with conn:
-        conn.execute(
-            """
-            UPDATE claims
-            SET answers_json = ?,
-                claimant_statement = COALESCE(?, claimant_statement),
-                claimed_damage_area = COALESCE(?, claimed_damage_area)
-            WHERE id = ?
-            """,
-            (answers_json, stmt, claimed_area, session["claim_id"]),
-        )
+        if parts_val is not None:
+            conn.execute(
+                """
+                UPDATE claims
+                SET answers_json = ?,
+                    claimant_statement = COALESCE(?, claimant_statement),
+                    claimed_damage_area = ?
+                WHERE id = ?
+                """,
+                (answers_json, stmt, claimed_area, session["claim_id"]),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE claims
+                SET answers_json = ?,
+                    claimant_statement = COALESCE(?, claimant_statement)
+                WHERE id = ?
+                """,
+                (answers_json, stmt, session["claim_id"]),
+            )
     conn.close()
 
     return {
@@ -850,17 +922,27 @@ async def submit_capture(request: Request, token: str):
             answers_dict = json.loads(claim["answers_json"])
         except Exception:
             answers_dict = {}
-    elif "answers" in body_data and isinstance(body_data["answers"], dict):
-        answers_dict = body_data["answers"]
-    elif claim["claimant_statement"]:
+    if "answers" in body_data and isinstance(body_data["answers"], dict):
+        body_answers = dict(body_data["answers"])
+        if "other-vehicle" in body_answers and "other_vehicle" not in body_answers:
+            body_answers["other_vehicle"] = body_answers["other-vehicle"]
+        for k, v in body_answers.items():
+            if v is not None:
+                answers_dict[k] = v
+    elif not answers_dict and claim["claimant_statement"]:
         answers_dict = {
             "statement": claim["claimant_statement"],
-            "parts": [claim["claimed_damage_area"]] if claim["claimed_damage_area"] else ["rear"],
+            "parts": [claim["claimed_damage_area"]] if claim["claimed_damage_area"] else [],
         }
 
     if not answers_dict:
         conn.close()
         raise HTTPException(status_code=400, detail="Answers are required before submitting.")
+
+    if "parts" in answers_dict and isinstance(answers_dict["parts"], list):
+        claimed_area = map_parts_to_claimed_area([str(p) for p in answers_dict["parts"]])
+    else:
+        claimed_area = claim["claimed_damage_area"]
 
     # Reconstruct readings
     readings: dict[str, Any] = {}
@@ -885,7 +967,7 @@ async def submit_capture(request: Request, token: str):
         state=claim["state"],
         claimant_name=claim["claimant_name"],
         claimant_statement=claim["claimant_statement"],
-        claimed_damage_area=claim["claimed_damage_area"],
+        claimed_damage_area=claimed_area,
     )
 
     reused_photos: dict[str, str] = {}
@@ -922,7 +1004,7 @@ async def submit_capture(request: Request, token: str):
             "id": claim["id"],
             "claimant_name": claim["claimant_name"],
             "claimant_statement": claim["claimant_statement"],
-            "claimed_damage_area": claim["claimed_damage_area"],
+            "claimed_damage_area": claimed_area,
         },
         "confirmed": True,
         "findings": [f.model_dump() for f in findings],
@@ -990,7 +1072,9 @@ async def submit_capture(request: Request, token: str):
                 ai_summary = ?,
                 signer_name = ?,
                 signature_image = ?,
-                signed_at = ?
+                signed_at = ?,
+                answers_json = ?,
+                claimed_damage_area = ?
             WHERE id = ?
             """,
             (
@@ -1000,6 +1084,8 @@ async def submit_capture(request: Request, token: str):
                 signer_name,
                 signature_str,
                 now_iso,
+                json.dumps(answers_dict),
+                claimed_area,
                 claim["id"],
             ),
         )
@@ -1311,26 +1397,33 @@ async def claim_report(request: Request, id: str):
         except Exception:
             vin_as_read = None
 
-    submitted_date_str = "N/A"
-    ready_date_str = "N/A"
-    if claim["created_at"]:
-        try:
-            dt = datetime.fromisoformat(claim["created_at"])
-            hour_str = dt.strftime("%I:%M %p").lstrip("0")
-            submitted_date_str = f"{dt.strftime('%b')} {dt.day}, {dt.year}, {hour_str}"
-            ready_date_str = f"{dt.strftime('%b')} {dt.day}, {dt.year}, {hour_str}"
-        except Exception:
-            submitted_date_str = claim["created_at"][:10]
-            ready_date_str = claim["created_at"][:10]
-
-    sig_short = claim["signature"][:8] if claim["signature"] else ""
-
     answers = {}
     if "answers_json" in claim.keys() and claim["answers_json"]:
         try:
             answers = json.loads(claim["answers_json"])
         except Exception:
             answers = {}
+    if "other-vehicle" in answers and "other_vehicle" not in answers:
+        answers["other_vehicle"] = answers["other-vehicle"]
+
+    date_raw = answers.get("date")
+    time_raw = answers.get("time")
+    if date_raw:
+        date_of_loss_formatted = format_readable_datetime(date_raw, time_raw)
+    elif claim["created_at"]:
+        date_of_loss_formatted = format_readable_datetime(claim["created_at"])
+    else:
+        date_of_loss_formatted = "Not given"
+
+    time_formatted = format_readable_time(time_raw)
+
+    signed_at_raw = claim["signed_at"] or claim["created_at"]
+    signed_at_formatted = format_readable_datetime(signed_at_raw) if signed_at_raw else "Not given"
+
+    submitted_date_str = signed_at_formatted
+    ready_date_str = signed_at_formatted
+
+    sig_short = claim["signature"][:8] if claim["signature"] else ""
 
     return templates.TemplateResponse(
         request=request,
@@ -1339,6 +1432,9 @@ async def claim_report(request: Request, id: str):
             "claim": claim,
             "session": session,
             "answers": answers,
+            "date_of_loss_formatted": date_of_loss_formatted,
+            "time_formatted": time_formatted,
+            "signed_at_formatted": signed_at_formatted,
             "photos": photos,
             "findings": findings,
             "findings_groups": groups,

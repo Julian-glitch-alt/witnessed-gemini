@@ -1,5 +1,5 @@
 import pytest
-from witnessed.checks import run_checks
+from witnessed.checks import map_parts_to_claimed_area, run_checks
 from witnessed.schemas import (
     DamageReading,
     Finding,
@@ -346,6 +346,33 @@ def test_photo_reused_matching_other_claim_is_red(clean_policy, clean_readings):
     assert "photo_reused" in f_map
     assert f_map["photo_reused"].status == "red"
     assert f_map["photo_reused"].reason == "This exact image was already submitted in claim CLM-PRIOR01."
+
+
+def test_map_parts_to_claimed_area_returns_none_when_no_part_maps():
+    assert map_parts_to_claimed_area(["Roof"]) is None
+    assert map_parts_to_claimed_area(["Wheels or tires"]) is None
+    assert map_parts_to_claimed_area(["Roof", "Wheels or tires"]) is None
+    assert map_parts_to_claimed_area(["Inside the car", "Underneath"]) is None
+    assert map_parts_to_claimed_area([]) is None
+    assert map_parts_to_claimed_area(["Roof"]) != "rear"
+
+
+def test_map_parts_to_claimed_area_maps_expected_areas():
+    assert map_parts_to_claimed_area(["Front bumper"]) == "front"
+    assert map_parts_to_claimed_area(["Rear bumper"]) == "rear"
+    assert map_parts_to_claimed_area(["Left side"]) == "left"
+    assert map_parts_to_claimed_area(["Right side"]) == "right"
+
+
+def test_damage_location_check_reports_unchecked_when_claimed_area_is_none(clean_policy, clean_readings):
+    claimed_area = map_parts_to_claimed_area(["Roof"])
+    assert claimed_area is None
+    clean_policy.claimed_damage_area = claimed_area
+    findings = run_checks(clean_policy, clean_readings)
+    f_map = _finding_map(findings)
+    assert f_map["damage_location"].status == "unchecked"
+    assert "not specified" in f_map["damage_location"].reason.lower()
+
 
 
 
