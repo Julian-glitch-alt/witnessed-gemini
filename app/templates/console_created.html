@@ -1,54 +1,65 @@
 {% extends "base.html" %}
 
-{% block title %}Claim Created - Witnessed{% endblock %}
+{% block title %}Claim {{ claim.id }} Created - Evidence Desk{% endblock %}
 
 {% block content %}
-<div style="max-width: 680px; margin: 0 auto;">
-  <div class="alert-box alert-success">
-    <span>&#10003;</span>
-    <div>
-      <strong>Claim {{ claim.id }} Created Successfully</strong>
-      <div style="font-size: 0.85rem;">Session Code: <strong>{{ session_code }}</strong></div>
+<div class="card-panel form-card" style="text-align: center;">
+  <div style="display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 50%; background: var(--good-bg); color: var(--good-text); font-size: 1.4rem; margin-bottom: 12px;">
+    &#10003;
+  </div>
+
+  <h1 style="font-size: 1.5rem; font-weight: 800; color: var(--ink); margin-bottom: 4px;">
+    Claim {{ claim.id }} Created
+  </h1>
+  <p style="font-size: 0.88rem; color: var(--mute); margin-bottom: 24px;">
+    Session code: <strong style="font-family: var(--font-mono); color: var(--brand);">{{ session_code }}</strong> &bull; {{ claim.color }} {{ claim.make }} {{ claim.model }} ({{ claim.plate }})
+  </p>
+
+  <!-- Large QR Code -->
+  <div style="background: #ffffff; border: 1px solid var(--line); border-radius: 16px; padding: 20px; display: inline-block; box-shadow: var(--shadow-soft); margin-bottom: 20px;">
+    <img src="{{ qr_data_uri }}" alt="QR Code for Evidence Capture" style="display: block; width: 220px; height: 220px;">
+    <div style="margin-top: 8px; font-family: var(--font-mono); font-size: 1.1rem; font-weight: 700; color: var(--brand);">
+      {{ session_code }}
     </div>
   </div>
 
-  <div class="card" style="text-align: center; padding: 2rem 1.5rem;">
-    <h2 style="margin-bottom: 0.5rem;">Claimant Evidence Capture</h2>
-    <p class="subtitle" style="margin-bottom: 1.5rem;">Send this link or show this QR code to the claimant to capture photos from their phone</p>
-
-    <div style="margin: 1.5rem auto; display: inline-block; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: #ffffff;">
-      <img src="{{ qr_data_uri }}" alt="QR Code for Evidence Capture" style="display: block; width: 220px; height: 220px;">
-      <div style="margin-top: 0.5rem; font-family: monospace; font-size: 1.1rem; font-weight: 700; color: var(--primary);">
-        Code: {{ session_code }}
-      </div>
+  <!-- Copy link field with Copied feedback -->
+  <div style="max-width: 480px; margin: 0 auto 24px;">
+    <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--mute); margin-bottom: 6px; text-align: left;">
+      Capture link
+    </label>
+    <div style="display: flex; gap: 8px;">
+      <input type="text" id="capture-url-input" class="form-control" value="{{ capture_url }}" readonly style="font-family: var(--font-mono); font-size: 0.86rem;">
+      <button type="button" id="copy-btn" class="btn-pill btn-pill-outline" onclick="copyCaptureLink()">Copy</button>
     </div>
-
-    <div style="margin: 1.5rem 0;">
-      <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.4rem;">
-        Capture URL
-      </label>
-      <div style="display: flex; gap: 0.5rem; max-width: 500px; margin: 0 auto;">
-        <input type="text" id="capture-url-input" class="form-control" value="{{ capture_url }}" readonly style="font-family: monospace; font-size: 0.9rem;">
-        <button type="button" class="btn btn-outline" onclick="copyCaptureUrl()">Copy</button>
-      </div>
-      <div style="margin-top: 0.5rem;">
-        <a href="{{ capture_url }}" target="_blank" style="font-size: 0.85rem; color: var(--primary);">Open Capture Page &nearr;</a>
-      </div>
+    <div id="copy-feedback" style="display: none; font-size: 0.8rem; color: var(--good-text); font-weight: 600; margin-top: 6px; text-align: left;">
+      &check; Copied to clipboard
     </div>
+  </div>
 
-    <div style="margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1.5rem; display: flex; justify-content: center; gap: 1rem;">
-      <a href="/console" class="btn btn-outline">Back to Claims</a>
-      <a href="/console/claims/{{ claim.id }}" class="btn btn-primary">View Claim Report</a>
-    </div>
+  <!-- Action buttons -->
+  <div style="display: flex; justify-content: center; gap: 12px; margin-top: 8px;">
+    <a href="/console" class="btn-pill btn-pill-outline">Back to Today</a>
+    <a href="/console/claims/{{ claim.id }}" class="btn-pill btn-pill-primary">Open the claim</a>
   </div>
 </div>
 
 <script>
-function copyCaptureUrl() {
+function copyCaptureLink() {
   const input = document.getElementById('capture-url-input');
-  input.select();
-  navigator.clipboard.writeText(input.value);
-  alert('Capture URL copied to clipboard!');
+  if (input) {
+    input.select();
+    navigator.clipboard.writeText(input.value).then(() => {
+      const btn = document.getElementById('copy-btn');
+      const fb = document.getElementById('copy-feedback');
+      if (btn) btn.textContent = 'Copied';
+      if (fb) fb.style.display = 'block';
+      setTimeout(() => {
+        if (btn) btn.textContent = 'Copy';
+        if (fb) fb.style.display = 'none';
+      }, 2500);
+    });
+  }
 }
 </script>
 {% endblock %}

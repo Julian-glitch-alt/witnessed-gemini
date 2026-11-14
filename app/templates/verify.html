@@ -1,48 +1,69 @@
 {% extends "base.html" %}
 
-{% block title %}Verify Evidence Package - Witnessed{% endblock %}
+{% block title %}Verify Evidence Package - Evidence Desk{% endblock %}
 
 {% block content %}
-<div style="max-width: 680px; margin: 0 auto;">
-  <div style="margin-bottom: 1.5rem;">
-    <h1>Verify Evidence Package</h1>
-    <p class="subtitle">Upload a sealed claim package file to verify its cryptographic Ed25519 signature</p>
+<div class="card-panel form-card">
+  <div style="margin-bottom: 24px;">
+    <h1 style="font-size: 1.6rem; font-weight: 800; color: var(--ink); margin-bottom: 4px;">Verify Package</h1>
+    <p style="font-size: 0.88rem; color: var(--mute);">Upload a sealed claim package file to verify its cryptographic Ed25519 signature</p>
   </div>
 
   {% if result_message %}
     {% if result_status == 'valid' %}
-      <div class="alert-box alert-success" style="font-size: 1.1rem; font-weight: 700;">
-        <span>&#10003;</span>
-        <div>Valid signature</div>
-      </div>
-      <div class="card" style="margin-top: -0.5rem; margin-bottom: 1.5rem; font-size: 0.95rem; color: var(--text-muted);">
-        The package signature matches the server's public key. The claim data, findings, and photo hashes have not been altered.
+      <div style="background: var(--good-bg); border: 1px solid var(--green-border); border-radius: 12px; padding: 18px 20px; margin-bottom: 24px;">
+        <div style="font-size: 1.15rem; font-weight: 800; color: var(--good-text); margin-bottom: 4px; display: flex; align-items: center; gap: 8px;">
+          <span>&#10003;</span> Valid signature
+        </div>
+        <div style="font-size: 0.85rem; color: var(--good-text);">
+          The package signature matches the server's public key. The claim data, findings, and photo hashes have not been altered.
+        </div>
       </div>
     {% else %}
-      <div class="alert-box alert-danger" style="font-size: 1.1rem; font-weight: 700;">
-        <span>&#9888;</span>
-        <div>Signature does not match: package was altered</div>
-      </div>
-      <div class="card" style="margin-top: -0.5rem; margin-bottom: 1.5rem; font-size: 0.95rem; color: var(--text-muted);">
-        Verification failed. The package contents or signature do not match the expected cryptographic seal.
+      <div style="background: var(--bad-bg); border: 1px solid var(--red-border); border-radius: 12px; padding: 18px 20px; margin-bottom: 24px;">
+        <div style="font-size: 1.15rem; font-weight: 800; color: var(--bad-text); margin-bottom: 4px; display: flex; align-items: center; gap: 8px;">
+          <span>&#9888;</span> Signature does not match: package was altered
+        </div>
+        <div style="font-size: 0.85rem; color: var(--bad-text);">
+          Verification failed. The package contents or signature do not match the expected cryptographic seal.
+        </div>
       </div>
     {% endif %}
   {% endif %}
 
-  <div class="card">
-    <form action="/verify" method="post" enctype="multipart/form-data">
-      <div class="form-group">
-        <label for="package_file">Select Sealed Package JSON File</label>
-        <input type="file" id="package_file" name="package_file" class="form-control" accept=".json,application/json" required>
-        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.35rem;">
-          Upload the <code>.json</code> file downloaded from any claim report.
-        </div>
+  <form action="/verify" method="post" enctype="multipart/form-data">
+    <div class="dropzone-box" onclick="document.getElementById('package_file').click()">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 12px;">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg>
+      <div style="font-weight: 700; font-size: 0.95rem; color: var(--ink); margin-bottom: 4px;">
+        Choose a sealed package JSON or drop here
       </div>
+      <div style="font-size: 0.8rem; color: var(--mute);" id="file-chosen-text">
+        Upload the <code>.json</code> file downloaded from any claim report
+      </div>
+      <input type="file" id="package_file" name="package_file" accept=".json,application/json" required style="display: none;" onchange="handleFileSelected(this)">
+    </div>
 
-      <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end;">
-        <button type="submit" class="btn btn-primary">Verify Package Signature</button>
-      </div>
-    </form>
-  </div>
+    <div style="display: flex; justify-content: flex-end; gap: 12px;">
+      <a href="/console" class="btn-pill btn-pill-outline">Back to Today</a>
+      <button type="submit" class="btn-pill btn-pill-primary">Verify package signature</button>
+    </div>
+  </form>
 </div>
+
+<script>
+function handleFileSelected(input) {
+  if (input.files && input.files.length > 0) {
+    const textEl = document.getElementById('file-chosen-text');
+    if (textEl) {
+      textEl.textContent = 'Selected: ' + input.files[0].name;
+      textEl.style.color = 'var(--brand)';
+      textEl.style.fontWeight = '600';
+    }
+  }
+}
+</script>
 {% endblock %}

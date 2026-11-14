@@ -53,6 +53,73 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
+def get_needs_decision_count() -> int:
+    try:
+        conn = get_connection()
+        count = conn.execute(
+            "SELECT COUNT(*) FROM claims WHERE status = 'ready_for_review'"
+        ).fetchone()[0]
+        conn.close()
+        return count
+    except Exception:
+        return 0
+
+
+def format_relative_time(iso_str: str | None) -> str:
+    if not iso_str:
+        return "recently"
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        now = datetime.now(timezone.utc)
+        diff = now - dt
+        seconds = int(diff.total_seconds())
+        if seconds < 60:
+            return "just now"
+        minutes = seconds // 60
+        if minutes < 60:
+            return f"{minutes}m ago"
+        hours = minutes // 60
+        if hours < 24:
+            return f"{hours}h ago"
+        days = hours // 24
+        return f"{days}d ago"
+    except Exception:
+        return "recently"
+
+
+def get_claimant_initials(name: str | None) -> str:
+    if not name or not name.strip():
+        return "CL"
+    parts = name.strip().split()
+    if len(parts) >= 2:
+        return (parts[0][0] + parts[-1][0]).upper()
+    return parts[0][:2].upper()
+
+
+def parse_iso_ts(iso_str: str | None) -> float:
+    if not iso_str:
+        return 0.0
+    try:
+        return datetime.fromisoformat(iso_str).timestamp()
+    except Exception:
+        return 0.0
+
+
+def compute_claim_lane(claim: Any, claim_findings: list[Any]) -> tuple[str, int, str]:
+    if claim["status"] == "pending_capture":
+        return ("waiting", 3, "No photos yet.")
+
+    reds = [f for f in claim_findings if f["status"] == "red"]
+    if reds:
+        return ("mismatch", 0, reds[0]["reason"])
+
+    ambers = [f for f in claim_findings if f["status"] == "amber"]
+    if ambers:
+        return ("review", 1, ambers[0]["reason"])
+
+    return ("clear", 2, "All checks matched.")
+
+
 def build_findings_summary(findings: list[Any]) -> str:
     if not findings:
         return "No issues found by the automated checks. The adjuster makes the decision."
@@ -94,17 +161,124 @@ async def root():
 @app.get("/console", response_class=HTMLResponse)
 async def console_list(request: Request):
     conn = get_connection()
-    claims = conn.execute("SELECT * FROM claims ORDER BY created_at DESC").fetchall()
+    claims_rows = conn.execute("SELECT * FROM claims").fetchall()
+    findings_rows = conn.execute("SELECT * FROM findings").fetchall()
+    photos_rows = conn.execute("SELECT * FROM photos").fetchall()
     conn.close()
+
+    findings_by_claim: dict[str, list[Any]] = {}
+    for f in findings_rows:
+        findings_by_claim.setdefault(f["claim_id"], []).append(f)
+
+    claim_items = []
+    for c in claims_rows:
+        cid = c["id"]
+        c_findings = findings_by_claim.get(cid, [])
+        lane, priority, why_here = compute_claim_lane(c, c_findings)
+        claim_items.append({
+            "id": c["id"],
+            "claimant_name": c["claimant_name"] or "N/A",
+            "initials": get_claimant_initials(c["claimant_name"]),
+            "make": c["make"] or "",
+            "model": c["model"] or "",
+            "color": c["color"] or "",
+            "plate": c["plate"] or "",
+            "state": c["state"] or "",
+            "claimed_damage_area": c["claimed_damage_area"] or "N/A",
+            "status": c["status"],
+            "created_at": c["created_at"],
+            "created_ts": parse_iso_ts(c["created_at"]),
+            "updated_relative": format_relative_time(c["created_at"]),
+            "lane": lane,
+            "lane_priority": priority,
+            "why_here": why_here,
+            "vehicle_str": f"{c['color']} {c['make']} {c['model']}".strip(),
+        })
+
+    # Sort: red first (0), then amber (1), then clear (2), then waiting (3); newest first within a group
+    sorted_claims = sorted(claim_items, key=lambda x: (x["lane_priority"], -x["created_ts"]))
+
+    waiting_decision_count = sum(1 for c in claim_items if c["status"] == "ready_for_review")
+    mismatch_count = sum(1 for c in claim_items if c["lane"] == "mismatch")
+    waiting_claimant_count = sum(1 for c in claim_items if c["status"] == "pending_capture")
+    decided_count = sum(1 for c in claim_items if c["status"] in ("approved", "recapture_requested", "escalated_to_siu"))
+    total_claims = len(claim_items)
+
+    waiting_claims = [c for c in claim_items if c["status"] == "pending_capture"]
+    latest_waiting_claimant = waiting_claims[0]["claimant_name"] if waiting_claims else None
+
+    now = datetime.now()
+    header_subline = f"{now.strftime('%A, %B')} {now.day}. {waiting_decision_count} need a decision, {waiting_claimant_count} waiting for the claimant."
+
+    photos_read = sum(1 for p in photos_rows if p["status"] == "read")
+    readings_unchecked = sum(1 for p in photos_rows if p["status"] == "unchecked")
+    models = [p["model"] for p in photos_rows if "model" in p.keys() and p["model"]]
+    if models:
+        from collections import Counter
+        model_used_most = Counter(models).most_common(1)[0][0]
+    else:
+        model_used_most = "gemini-2.5-flash"
+
+    days = ["Wed", "Thu", "Fri", "Sat", "Sun", "Mon", "Tue"]
+    chart_days = []
+    for d in days:
+        chart_days.append({
+            "day": d,
+            "total": 0,
+            "clear": 0,
+            "review": 0,
+            "mismatch": 0,
+            "waiting": 0,
+            "height_pct": 10,
+        })
+    if chart_days:
+        last_day = chart_days[-1]
+        last_day["total"] = total_claims
+        last_day["clear"] = sum(1 for c in claim_items if c["lane"] == "clear")
+        last_day["review"] = sum(1 for c in claim_items if c["lane"] == "review")
+        last_day["mismatch"] = mismatch_count
+        last_day["waiting"] = waiting_claimant_count
+        last_day["height_pct"] = min(100, max(24, total_claims * 24))
+
+    counts = {
+        "needs_me": waiting_decision_count,
+        "mismatch": mismatch_count,
+        "waiting": waiting_claimant_count,
+        "decided": decided_count,
+        "all": total_claims,
+    }
+
     return templates.TemplateResponse(
-        request=request, name="console_list.html", context={"claims": claims}
+        request=request,
+        name="console_list.html",
+        context={
+            "claims": sorted_claims,
+            "counts": counts,
+            "header_subline": header_subline,
+            "waiting_decision_count": waiting_decision_count,
+            "mismatch_count": mismatch_count,
+            "waiting_claimant_count": waiting_claimant_count,
+            "latest_waiting_claimant": latest_waiting_claimant,
+            "avg_minutes": 3,
+            "photos_read": photos_read,
+            "readings_unchecked": readings_unchecked,
+            "model_used_most": model_used_most,
+            "chart_days": chart_days,
+            "needs_decision_count": waiting_decision_count,
+            "active_nav": "today",
+        },
     )
 
 
 @app.get("/console/new", response_class=HTMLResponse)
 async def console_new_form(request: Request):
     return templates.TemplateResponse(
-        request=request, name="console_new.html", context={}
+        request=request,
+        name="console_new.html",
+        context={
+            "needs_decision_count": get_needs_decision_count(),
+            "active_nav": "new",
+        },
     )
 
 
@@ -173,6 +347,8 @@ async def console_create_claim(
             "session_code": session_code,
             "capture_url": capture_url,
             "qr_data_uri": qr_data_uri,
+            "needs_decision_count": get_needs_decision_count(),
+            "active_nav": "new",
         },
     )
 
@@ -528,7 +704,22 @@ async def claim_report(request: Request, id: str):
     decisions = conn.execute(
         "SELECT * FROM decisions WHERE claim_id = ? ORDER BY timestamp DESC", (id,)
     ).fetchall()
+
+    queue_rows = conn.execute(
+        "SELECT id FROM claims WHERE status = 'ready_for_review' ORDER BY created_at DESC"
+    ).fetchall()
+    needs_decision_count = len(queue_rows)
     conn.close()
+
+    queue_ids = [r["id"] for r in queue_rows]
+    if id in queue_ids:
+        k = queue_ids.index(id) + 1
+        n = len(queue_ids)
+        next_claim_id = queue_ids[(queue_ids.index(id) + 1) % n] if n > 1 else None
+    else:
+        k = 1
+        n = max(1, len(queue_ids))
+        next_claim_id = queue_ids[0] if queue_ids else None
 
     status_order = {"red": 0, "amber": 1, "unchecked": 2, "green": 3}
     findings = sorted(
@@ -553,6 +744,158 @@ async def claim_report(request: Request, id: str):
         provider = get_provider()
         ai_summary = summarize(findings, provider)
 
+    group_definitions = [
+        {
+            "id": "vehicle_and_plate",
+            "title": "1. Vehicle and plate",
+            "checks": ["plate_match", "vehicle_match", "vin_format"],
+        },
+        {
+            "id": "damage",
+            "title": "2. Damage",
+            "checks": ["damage_present", "damage_location"],
+        },
+        {
+            "id": "photo_integrity",
+            "title": "3. Photo integrity",
+            "checks": ["duplicate_photo", "photo_reused"],
+        },
+    ]
+
+    all_numbered_findings = []
+    groups = []
+    finding_num = 1
+    slot_markers: dict[str, int] = {}
+    slot_borders: dict[str, str] = {}
+
+    check_to_slot = {
+        "plate_match": "plate",
+        "vehicle_match": "wide",
+        "vin_format": "vin",
+        "damage_present": "damage",
+        "damage_location": "damage",
+    }
+
+    seen_checks = set()
+    for g_def in group_definitions:
+        g_findings = []
+        for chk in g_def["checks"]:
+            f_row = next((f for f in findings_rows if f["check_name"] == chk), None)
+            if f_row:
+                seen_checks.add(chk)
+                item = {
+                    "number": finding_num,
+                    "check_name": f_row["check_name"],
+                    "status": f_row["status"],
+                    "reason": f_row["reason"],
+                    "adjuster_label": (
+                        f_row["adjuster_label"]
+                        if "adjuster_label" in f_row.keys()
+                        else None
+                    ),
+                }
+                g_findings.append(item)
+                all_numbered_findings.append(item)
+
+                slot = check_to_slot.get(chk)
+                if slot and item["status"] in ("red", "amber"):
+                    if slot not in slot_borders or item["status"] == "red":
+                        slot_borders[slot] = item["status"]
+                        slot_markers[slot] = finding_num
+                elif chk in ("duplicate_photo", "photo_reused") and item["status"] in ("red", "amber"):
+                    for s in ("wide", "damage", "plate", "vin"):
+                        if s in item["reason"] or chk == "duplicate_photo":
+                            if s not in slot_borders or item["status"] == "red":
+                                slot_borders[s] = item["status"]
+                                slot_markers[s] = finding_num
+
+                finding_num += 1
+
+        if any(f["status"] == "red" for f in g_findings):
+            g_status = "red"
+            g_status_label = "Mismatch"
+        elif any(f["status"] == "amber" for f in g_findings):
+            g_status = "amber"
+            g_status_label = "Review"
+        elif any(f["status"] == "green" for f in g_findings):
+            g_status = "green"
+            g_status_label = "Match"
+        else:
+            g_status = "unchecked"
+            g_status_label = "Unchecked"
+
+        groups.append({
+            "id": g_def["id"],
+            "title": g_def["title"],
+            "findings": g_findings,
+            "status": g_status,
+            "status_label": g_status_label,
+        })
+
+    other_findings = [f for f in findings_rows if f["check_name"] not in seen_checks]
+    if other_findings:
+        g_findings = []
+        for f_row in other_findings:
+            item = {
+                "number": finding_num,
+                "check_name": f_row["check_name"],
+                "status": f_row["status"],
+                "reason": f_row["reason"],
+                "adjuster_label": (
+                    f_row["adjuster_label"]
+                    if "adjuster_label" in f_row.keys()
+                    else None
+                ),
+            }
+            g_findings.append(item)
+            all_numbered_findings.append(item)
+            finding_num += 1
+        groups.append({
+            "id": "other",
+            "title": f"{len(groups) + 1}. Other checks",
+            "findings": g_findings,
+            "status": "amber" if any(f["status"] in ("red", "amber") for f in g_findings) else "green",
+            "status_label": "Review" if any(f["status"] in ("red", "amber") for f in g_findings) else "Match",
+        })
+
+    has_issues = any(f["status"] in ("red", "amber") for f in findings_rows)
+    if has_issues:
+        suggested_step = {
+            "type": "review",
+            "title": "Adjuster review",
+            "bg": "amber",
+            "line": f"Based on findings 1 to {len(all_numbered_findings)}. You make the decision.",
+        }
+    else:
+        suggested_step = {
+            "type": "fast_track",
+            "title": "Fast track",
+            "bg": "green",
+            "line": f"Based on findings 1 to {len(all_numbered_findings)}. You make the decision.",
+        }
+
+    vin_as_read = None
+    if "vin" in photos and photos["vin"]["reading_json"]:
+        try:
+            vin_data = json.loads(photos["vin"]["reading_json"])
+            vin_as_read = vin_data.get("vin")
+        except Exception:
+            vin_as_read = None
+
+    submitted_date_str = "N/A"
+    ready_date_str = "N/A"
+    if claim["created_at"]:
+        try:
+            dt = datetime.fromisoformat(claim["created_at"])
+            hour_str = dt.strftime("%I:%M %p").lstrip("0")
+            submitted_date_str = f"{dt.strftime('%b')} {dt.day}, {dt.year}, {hour_str}"
+            ready_date_str = f"{dt.strftime('%b')} {dt.day}, {dt.year}, {hour_str}"
+        except Exception:
+            submitted_date_str = claim["created_at"][:10]
+            ready_date_str = claim["created_at"][:10]
+
+    sig_short = claim["signature"][:8] if claim["signature"] else ""
+
     return templates.TemplateResponse(
         request=request,
         name="console_claim.html",
@@ -561,12 +904,68 @@ async def claim_report(request: Request, id: str):
             "session": session,
             "photos": photos,
             "findings": findings,
+            "findings_groups": groups,
+            "all_numbered_findings": all_numbered_findings,
+            "slot_markers": slot_markers,
+            "slot_borders": slot_borders,
+            "suggested_step": suggested_step,
             "decisions": decisions,
             "summary_line": summary_line,
             "is_valid_seal": is_valid_seal,
             "ai_summary": ai_summary,
+            "vin_as_read": vin_as_read,
+            "submitted_date_str": submitted_date_str,
+            "ready_date_str": ready_date_str,
+            "sig_short": sig_short,
+            "k": k,
+            "n": n,
+            "next_claim_id": next_claim_id,
+            "needs_decision_count": needs_decision_count,
+            "active_nav": "claim",
         },
     )
+
+
+@app.post("/console/claims/{id}/findings/{check}/label")
+async def label_finding(
+    request: Request,
+    id: str,
+    check: str,
+    label: str | None = Form(None),
+):
+    if label is None:
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                label = body.get("label")
+        except Exception:
+            pass
+
+    if not label or label.strip().lower() not in {"confirm", "false_alarm"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid label. Allowed values: confirm, false_alarm.",
+        )
+
+    clean_label = label.strip().lower()
+    conn = get_connection()
+    claim = conn.execute("SELECT id FROM claims WHERE id = ?", (id,)).fetchone()
+    if not claim:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    with conn:
+        conn.execute(
+            "UPDATE findings SET adjuster_label = ? WHERE claim_id = ? AND check_name = ?",
+            (clean_label, id, check),
+        )
+    conn.close()
+
+    accept_header = request.headers.get("accept", "")
+    if "application/json" in accept_header or request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return {"ok": True, "claim_id": id, "check": check, "label": clean_label}
+
+    return RedirectResponse(url=f"/console/claims/{id}", status_code=303)
 
 
 @app.get("/console/claims/{id}/package")
@@ -636,7 +1035,12 @@ async def verify_page(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="verify.html",
-        context={"result_message": None, "result_status": None},
+        context={
+            "result_message": None,
+            "result_status": None,
+            "needs_decision_count": get_needs_decision_count(),
+            "active_nav": "verify",
+        },
     )
 
 
@@ -669,5 +1073,7 @@ async def verify_package_file(
         context={
             "result_message": result_message,
             "result_status": result_status,
+            "needs_decision_count": get_needs_decision_count(),
+            "active_nav": "verify",
         },
     )

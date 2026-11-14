@@ -93,4 +93,8 @@ def init_db() -> None:
             conn.execute("ALTER TABLE photos ADD COLUMN model TEXT;")
         except Exception:
             pass
+        try:
+            conn.execute("ALTER TABLE findings ADD COLUMN adjuster_label TEXT;")
+        except Exception:
+            pass
     conn.close()

@@ -1,270 +1,365 @@
 {% extends "base.html" %}
 
-{% block title %}Claim {{ claim.id }} - Witnessed{% endblock %}
+{% block title %}Claim {{ claim.id }} - Evidence Desk{% endblock %}
 
 {% block content %}
-<!-- 1. Header (claim id, status, session) -->
-<div style="margin-bottom: 1.5rem;">
-  <a href="/console" style="color: var(--text-muted); text-decoration: none; font-size: 0.9rem;">&larr; Back to Claims</a>
-  <div class="claim-header-row">
-    <div>
-      <h1>Claim {{ claim.id }}</h1>
-      <p class="subtitle" style="margin-bottom: 0;">
-        Policy Vehicle: <strong>{{ claim.color }} {{ claim.make }} {{ claim.model }}</strong> &bull; Plate: <strong>{{ claim.plate }} ({{ claim.state }})</strong>
-      </p>
-    </div>
-    <div class="claim-header-status">
-      {% if claim.status == 'approved' %}
-        <span class="pill pill-green" style="font-size: 0.9rem;">Approved</span>
-      {% elif claim.status == 'ready_for_review' %}
-        <span class="pill pill-amber" style="font-size: 0.9rem;">Ready for Review</span>
-      {% elif claim.status == 'escalated_to_siu' %}
-        <span class="pill pill-red" style="font-size: 0.9rem;">Escalated SIU</span>
-      {% elif claim.status == 'recapture_requested' %}
-        <span class="pill pill-amber" style="font-size: 0.9rem;">Recapture Requested</span>
-      {% else %}
-        <span class="pill pill-gray" style="font-size: 0.9rem;">{{ claim.status }}</span>
-      {% endif %}
-      <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">
-        Session: {{ session.session_code if session else "N/A" }}
+<!-- Top Breadcrumb & Next Claim pill -->
+<div class="claim-top-bar">
+  <div class="claim-breadcrumb">
+    <a href="/console">Today</a> / <span class="claim-breadcrumb-title">{{ claim.id }} {{ claim.claimant_name }}, {{ claim.color }} {{ claim.make }} {{ claim.model }}</span>
+  </div>
+
+  <div class="claim-top-actions">
+    {% if claim.status == 'approved' %}
+      <span class="pill pill-green" style="font-size: 0.8rem; margin-right: 8px;">Approved</span>
+    {% elif claim.status == 'recapture_requested' %}
+      <span class="pill pill-amber" style="font-size: 0.8rem; margin-right: 8px;">Recapture Requested</span>
+    {% elif claim.status == 'escalated_to_siu' %}
+      <span class="pill pill-red" style="font-size: 0.8rem; margin-right: 8px;">Escalated SIU</span>
+    {% endif %}
+    {% if next_claim_id %}
+      <a href="/console/claims/{{ next_claim_id }}" class="btn-pill btn-pill-outline" style="font-size: 0.78rem; padding: 4px 14px;">
+        Next claim, {{ k }} of {{ n }} &rarr;
+      </a>
+    {% else %}
+      <span class="pill pill-gray" style="font-size: 0.78rem;">Claim {{ k }} of {{ n }}</span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="claim-workspace-grid">
+  <!-- Left Column: The Desk Panel -->
+  <div class="desk-panel">
+    <div class="paper-document">
+      <div class="paper-top-row">
+        <span class="paper-notice-lbl">Loss notice</span>
+        <span class="paper-claim-id">Claim {{ claim.id }}</span>
       </div>
-    </div>
-  </div>
-</div>
 
-<!-- 2. Code summary -->
-<div class="card" style="background: var(--bg-card); border-left: 4px solid var(--primary); padding: 1rem 1.25rem;">
-  <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.25rem;">
-    Evidence Summary (Deterministic Rule Engine)
-  </div>
-  <div style="font-size: 1.05rem; font-weight: 600; color: var(--text-main);">
-    {{ summary_line }}
-  </div>
-</div>
+      <h1 class="paper-title">Automobile Loss Notice</h1>
+      <p class="paper-subline">Submitted by {{ claim.claimant_name }} through the secure capture link on {{ submitted_date_str }}.</p>
 
-<!-- 3. AI summary -->
-{% if ai_summary and ai_summary.sentences %}
-<div class="card" style="background: var(--bg-card); border-left: 4px solid #4f46e5; padding: 1rem 1.25rem;">
-  <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.5rem;">
-    AI summary (checked against findings)
-  </div>
-  <div style="font-size: 0.95rem; color: var(--text-main); line-height: 1.6;">
-    {% for s in ai_summary.sentences %}
-      <div style="margin-bottom: 0.35rem;">
-        {{ s.text }}
-        {% for cite in s.cites %}
-          <span class="pill pill-gray" style="font-size: 0.72rem; padding: 0.1rem 0.45rem; font-family: monospace; text-transform: none; margin-left: 0.25rem;">{{ cite }}</span>
-        {% endfor %}
-      </div>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
+      <!-- Section 1. What happened -->
+      <section class="paper-section">
+        <h2 class="paper-section-heading">1. What happened</h2>
+        <table class="paper-table">
+          <tbody>
+            <tr>
+              <td class="paper-lbl">Date of the loss</td>
+              <td class="paper-val">{{ claim.created_at[:10] }}</td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">Describe what happened</td>
+              <td class="paper-val">"{{ claim.claimant_statement }}"</td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">Which areas are damaged?</td>
+              <td class="paper-val" style="text-transform: capitalize;">{{ claim.claimed_damage_area }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
 
-<!-- 4. Findings table -->
-<div class="card" style="padding: 0; overflow-x: auto;">
-  <div style="padding: 1.25rem 1.5rem 0.5rem;">
-    <h2>Automated Findings</h2>
-    <p class="subtitle" style="margin-bottom: 0.5rem;">Pure code rules comparing policy data with structured AI photo readings</p>
-  </div>
-  <table class="data-table findings-table">
-    <thead>
-      <tr>
-        <th style="width: 200px;">Check</th>
-        <th style="width: 140px;">Status</th>
-        <th>Reasoning & Observation</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for finding in findings %}
-      <tr class="findings-row-{{ finding.status }}">
-        <td class="findings-td-check">
-          <div class="findings-mobile-header">
-            <span class="findings-check-name">{{ finding.check_name }}</span>
-            <span class="findings-mobile-pill">
-              {% if finding.status == 'green' %}
-                <span class="pill pill-green">Match</span>
-              {% elif finding.status == 'amber' %}
-                <span class="pill pill-amber">Review</span>
-              {% elif finding.status == 'red' %}
-                <span class="pill pill-red">Mismatch</span>
+      <!-- Section 2. Your vehicle -->
+      <section class="paper-section">
+        <h2 class="paper-section-heading">2. Your vehicle</h2>
+        <table class="paper-table">
+          <tbody>
+            <tr>
+              <td class="paper-lbl">Make & Model</td>
+              <td class="paper-val">{{ claim.make }} {{ claim.model }}</td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">Color</td>
+              <td class="paper-val">{{ claim.color }}</td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">Plate & State</td>
+              <td class="paper-val">{{ claim.plate }} ({{ claim.state }})</td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">VIN as read</td>
+              <td class="paper-val" style="font-family: var(--font-mono);">
+                {{ vin_as_read or "Pending / Unread" }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Section 3. Photos -->
+      <section class="paper-section">
+        <h2 class="paper-section-heading">3. Photos</h2>
+        <div style="font-size: 0.76rem; color: var(--mute); font-style: italic; margin-bottom: 8px;">
+          Captured in the live camera flow, session {{ session.session_code if session else "N/A" }} &bull; Click to enlarge
+        </div>
+
+        <div class="paper-photo-grid">
+          <!-- Figure 1: Whole vehicle (wide) -->
+          {% set photo_wide = photos.get('wide') %}
+          <figure class="paper-photo-figure">
+            <div class="paper-photo-box {% if slot_borders.get('wide') == 'red' %}border-red{% elif slot_borders.get('wide') == 'amber' %}border-amber{% endif %}"
+                 {% if photo_wide %}onclick="openPhotoModal('wide', '{{ photo_wide.sha256 }}', '{{ photo_wide.model or 'fake' }}', {{ (photo_wide.reading_json or '{}') | tojson }})"{% endif %}>
+              {% if photo_wide %}
+                <img src="/photos/{{ photo_wide.sha256 }}" alt="Whole vehicle" class="paper-photo-img">
               {% else %}
-                <span class="pill pill-gray">Unchecked</span>
+                <div class="paper-photo-missing">No photo yet</div>
               {% endif %}
-            </span>
-          </div>
-        </td>
-        <td class="findings-td-status">
-          {% if finding.status == 'green' %}
-            <span class="pill pill-green">Match</span>
-          {% elif finding.status == 'amber' %}
-            <span class="pill pill-amber">Review</span>
-          {% elif finding.status == 'red' %}
-            <span class="pill pill-red">Mismatch</span>
-          {% else %}
-            <span class="pill pill-gray">Unchecked</span>
-          {% endif %}
-        </td>
-        <td class="findings-td-reason">
-          {{ finding.reason }}
-        </td>
-      </tr>
-      {% else %}
-      <tr>
-        <td colspan="3" style="text-align: center; padding: 2rem; color: var(--text-muted);">
-          No findings generated yet. Evidence submission is pending.
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+              {% if slot_markers.get('wide') %}
+                <div class="photo-marker-badge {{ slot_borders.get('wide') }}">{{ slot_markers.get('wide') }}</div>
+              {% endif %}
+            </div>
+            <figcaption class="paper-photo-caption">
+              Figure 1. Whole vehicle, captured live at {{ submitted_date_str }}.
+            </figcaption>
+          </figure>
 
-<!-- 5. Evidence photos -->
-<div class="card">
-  <h2>Evidence Photos</h2>
-  <p class="subtitle" style="margin-bottom: 1rem;">Captured in the live camera flow, session {{ session.session_code if session else "N/A" }} &bull; Click any thumbnail to inspect details</p>
-  <div class="photo-grid">
-    {% set slots = ['wide', 'damage', 'plate', 'vin'] %}
-    {% for slot in slots %}
-      {% set photo = photos.get(slot) %}
-      <div class="photo-card" {% if photo %}style="cursor: pointer;" onclick="openPhotoModal('{{ slot }}', '{{ photo.sha256 }}', '{{ (photo.model if 'model' in photo.keys() else 'fake') or 'fake' }}', {{ (photo.reading_json if photo.reading_json else '{}') | tojson }})"{% endif %}>
-        <div class="photo-card-header">
-          <span style="text-transform: uppercase;">{{ slot }}</span>
-          {% if photo %}
-            <span class="pill pill-green" style="font-size: 0.65rem; padding: 0.1rem 0.4rem;">Captured</span>
+          <!-- Figure 2: Damage close-up (damage) -->
+          {% set photo_damage = photos.get('damage') %}
+          <figure class="paper-photo-figure">
+            <div class="paper-photo-box {% if slot_borders.get('damage') == 'red' %}border-red{% elif slot_borders.get('damage') == 'amber' %}border-amber{% endif %}"
+                 {% if photo_damage %}onclick="openPhotoModal('damage', '{{ photo_damage.sha256 }}', '{{ photo_damage.model or 'fake' }}', {{ (photo_damage.reading_json or '{}') | tojson }})"{% endif %}>
+              {% if photo_damage %}
+                <img src="/photos/{{ photo_damage.sha256 }}" alt="Damage close-up" class="paper-photo-img">
+              {% else %}
+                <div class="paper-photo-missing">No photo yet</div>
+              {% endif %}
+              {% if slot_markers.get('damage') %}
+                <div class="photo-marker-badge {{ slot_borders.get('damage') }}">{{ slot_markers.get('damage') }}</div>
+              {% endif %}
+            </div>
+            <figcaption class="paper-photo-caption">
+              Figure 2. Damage close-up, captured live at {{ submitted_date_str }}.
+            </figcaption>
+          </figure>
+
+          <!-- Figure 3: License plate (plate) -->
+          {% set photo_plate = photos.get('plate') %}
+          <figure class="paper-photo-figure">
+            <div class="paper-photo-box {% if slot_borders.get('plate') == 'red' %}border-red{% elif slot_borders.get('plate') == 'amber' %}border-amber{% endif %}"
+                 {% if photo_plate %}onclick="openPhotoModal('plate', '{{ photo_plate.sha256 }}', '{{ photo_plate.model or 'fake' }}', {{ (photo_plate.reading_json or '{}') | tojson }})"{% endif %}>
+              {% if photo_plate %}
+                <img src="/photos/{{ photo_plate.sha256 }}" alt="License plate" class="paper-photo-img">
+              {% else %}
+                <div class="paper-photo-missing">No photo yet</div>
+              {% endif %}
+              {% if slot_markers.get('plate') %}
+                <div class="photo-marker-badge {{ slot_borders.get('plate') }}">{{ slot_markers.get('plate') }}</div>
+              {% endif %}
+            </div>
+            <figcaption class="paper-photo-caption">
+              Figure 3. License plate, captured live at {{ submitted_date_str }}.
+            </figcaption>
+          </figure>
+
+          <!-- Figure 4: VIN plate (vin) -->
+          {% set photo_vin = photos.get('vin') %}
+          <figure class="paper-photo-figure">
+            <div class="paper-photo-box {% if slot_borders.get('vin') == 'red' %}border-red{% elif slot_borders.get('vin') == 'amber' %}border-amber{% endif %}"
+                 {% if photo_vin %}onclick="openPhotoModal('vin', '{{ photo_vin.sha256 }}', '{{ photo_vin.model or 'fake' }}', {{ (photo_vin.reading_json or '{}') | tojson }})"{% endif %}>
+              {% if photo_vin %}
+                <img src="/photos/{{ photo_vin.sha256 }}" alt="VIN plate" class="paper-photo-img">
+              {% else %}
+                <div class="paper-photo-missing">No photo yet</div>
+              {% endif %}
+              {% if slot_markers.get('vin') %}
+                <div class="photo-marker-badge {{ slot_borders.get('vin') }}">{{ slot_markers.get('vin') }}</div>
+              {% endif %}
+            </div>
+            <figcaption class="paper-photo-caption">
+              Figure 4. VIN plate, captured live at {{ submitted_date_str }}.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- Paper Footer & Digital Seal -->
+      <footer class="paper-footer">
+        <div class="paper-footer-text">
+          {% if is_valid_seal is true %}
+            <div>Sealed. Ed25519 signature is valid: this package has not changed since the server received it.</div>
+            <div style="font-size: 0.68rem; margin-top: 3px; opacity: 0.85;">The seal shows the package was not altered after receipt. It does not prove what the camera saw.</div>
+            <div style="margin-top: 6px;">Session {{ session.session_code if session else "N/A" }} &middot; Seal {{ sig_short }}&hellip;, check it on the Verify page</div>
+          {% elif is_valid_seal is false %}
+            <div style="color: var(--bad-text); font-weight: 700;">Signature does not match: package was altered</div>
           {% else %}
-            <span class="pill pill-gray" style="font-size: 0.65rem; padding: 0.1rem 0.4rem;">Missing</span>
+            <div>Session {{ session.session_code if session else "N/A" }} &middot; Photos not yet submitted or sealed.</div>
           {% endif %}
         </div>
-        {% if photo %}
-          <img src="/photos/{{ photo.sha256 }}" alt="{{ slot }} photo" class="photo-card-img">
-          <div class="photo-card-footer">
-            SHA: {{ photo.sha256[:16] }}...
-          </div>
-        {% else %}
-          <div class="photo-card-img" style="display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.85rem;">
-            No photo yet
-          </div>
-          <div class="photo-card-footer" style="color: var(--text-muted);">
-            Pending capture
+
+        {% if is_valid_seal is true %}
+          <div class="sealed-stamp" title="Cryptographically Sealed">
+            <div class="stamp-inner">
+              <span class="stamp-title">SEALED</span>
+              <span class="stamp-date">{{ claim.created_at[:10] }}</span>
+              <span class="stamp-algo">Ed25519</span>
+            </div>
           </div>
         {% endif %}
-      </div>
-    {% endfor %}
+      </footer>
+    </div>
   </div>
-</div>
 
-<!-- 6. Seal box -->
-<div class="card seal-card">
-  <div class="seal-text">
-    <strong>Digital Seal & Authenticity</strong>
-    <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;">
-      {% if is_valid_seal is true %}
-        <span class="pill pill-green">Sealed</span>
-        <span style="margin-left: 0.5rem;">Sealed. Ed25519 signature is valid: this package has not changed since the server received it.</span>
-        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.35rem;">
-          The seal shows the package was not altered after receipt. It does not prove what the camera saw.
+  <!-- Right Column: The Review Panel -->
+  <div class="review-panel">
+    <!-- Review Card -->
+    <div class="card-panel review-card">
+      <div class="review-card-header">
+        <span>Review of claim {{ claim.id }}</span>
+        <span>Ready {{ ready_date_str }}</span>
+      </div>
+
+      <h2 class="review-main-title">Review</h2>
+
+      <!-- In short section -->
+      <div class="in-short-block">
+        <div class="in-short-title">In short</div>
+        {% if ai_summary and ai_summary.sentences %}
+          <div class="in-short-text">
+            {% for s in ai_summary.sentences %}
+              <div style="margin-bottom: 4px;">
+                {{ s.text }}
+                {% for cite in s.cites %}
+                  <span class="cite-pill">{{ cite }}</span>
+                {% endfor %}
+              </div>
+            {% endfor %}
+          </div>
+          <div class="ai-attribution-note">
+            AI summary (checked against findings) &bull; Gemini &middot; sentences checked against the findings
+          </div>
+        {% endif %}
+        <div class="code-summary-box" style="margin-top: {% if ai_summary and ai_summary.sentences %}10px{% else %}0{% endif %}; font-size: 0.84rem; color: var(--ink); line-height: 1.45;">
+          <strong>Evidence Summary (Deterministic Rule Engine):</strong> {{ summary_line }}
         </div>
-      {% elif is_valid_seal is false %}
-        <span class="pill pill-red">Signature Mismatch</span>
-        <span style="margin-left: 0.5rem;">Warning: package data or signature has been tampered with!</span>
-      {% else %}
-        <span class="pill pill-gray">Unsealed</span>
-        <span style="margin-left: 0.5rem;">Photos not yet submitted or sealed.</span>
+      </div>
+
+      <!-- Findings Grouped as Numbered Items -->
+      <div class="findings-groups-wrap">
+        {% for group in findings_groups %}
+          <div class="findings-group">
+            <div class="findings-group-header">
+              <span class="findings-group-title">{{ group.title }}</span>
+              {% if group.status == 'red' %}
+                <span class="pill pill-red">{{ group.status_label }}</span>
+              {% elif group.status == 'amber' %}
+                <span class="pill pill-amber">{{ group.status_label }}</span>
+              {% elif group.status == 'green' %}
+                <span class="pill pill-green">Match</span>
+              {% else %}
+                <span class="pill pill-gray">{{ group.status_label }}</span>
+              {% endif %}
+            </div>
+
+            <div class="findings-items-list">
+              {% for f in group.findings %}
+                <div class="finding-item-row findings-row-{{ f.status }}">
+                  <div class="finding-num-circle {{ f.status }}">{{ f.number }}</div>
+                  <div class="finding-content">
+                    <div class="finding-reason-text">{{ f.reason }}</div>
+                    <div class="finding-check-sub">{{ f.check_name }}</div>
+                    <div class="finding-actions-row">
+                      <button type="button" class="finding-btn" onclick="labelFinding('{{ claim.id }}', '{{ f.check_name }}', 'confirm', this)">
+                        Confirm
+                      </button>
+                      <button type="button" class="finding-btn" onclick="labelFinding('{{ claim.id }}', '{{ f.check_name }}', 'false_alarm', this)">
+                        False alarm
+                      </button>
+                      <span id="label-status-{{ f.check_name }}" class="finding-label-badge {{ f.adjuster_label or '' }}" style="{% if not f.adjuster_label %}display: none;{% endif %}">
+                        {% if f.adjuster_label == 'confirm' %}
+                          Confirmed by adjuster
+                        {% elif f.adjuster_label == 'false_alarm' %}
+                          Marked false alarm
+                        {% endif %}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Suggested Next Step Card -->
+    <div class="suggested-step-card {{ suggested_step.bg }}">
+      <div class="step-card-kicker">Suggested by the checks</div>
+      <div class="step-card-headline">{{ suggested_step.title }}</div>
+      <div class="step-card-subline">{{ suggested_step.line }}</div>
+    </div>
+
+    <!-- Your Decision Card -->
+    <div class="card-panel decision-card">
+      <div class="decision-card-title">Your decision</div>
+      <form action="/console/claims/{ id }}/decision" method="post" id="decision-form" onsubmit="this.action='/console/claims/{{ claim.id }}/decision'">
+        <div class="form-group" style="margin-bottom: 12px;">
+          <input type="text" name="note" class="form-control" placeholder="Decision note (optional)..." style="font-size: 0.82rem; padding: 7px 10px;">
+        </div>
+
+        <div class="decision-buttons-stack">
+          <button type="submit" name="action" value="approve" class="btn-approve-full">
+            Approve
+          </button>
+          <div class="decision-two-up">
+            <button type="submit" name="action" value="recapture" class="decision-sub-btn">
+              Request recapture
+            </button>
+            <button type="submit" name="action" value="escalate" class="decision-sub-btn red-action">
+              Refer to SIU
+            </button>
+          </div>
+        </div>
+      </form>
+
+      {% if decisions %}
+        <div class="decision-log-wrap">
+          <div style="font-weight: 700; text-transform: uppercase; font-size: 0.72rem; margin-bottom: 6px; letter-spacing: 0.04em;">Decision Log</div>
+          {% for d in decisions %}
+            <div style="padding: 3px 0;">
+              <strong>{{ d.action | capitalize }}</strong>{% if d.note %} &mdash; <em>{{ d.note }}</em>{% endif %}
+              <span style="font-size: 0.72rem; color: var(--mute);">({{ d.timestamp[:19].replace('T', ' ') }})</span>
+            </div>
+          {% endfor %}
+        </div>
       {% endif %}
     </div>
-  </div>
-  {% if claim.package_bytes %}
-  <div class="seal-action">
-    <a href="/console/claims/{{ claim.id }}/package" class="btn btn-outline" download>
-      Download Sealed Package (.json) &darr;
-    </a>
-  </div>
-  {% endif %}
-</div>
 
-<!-- 7. Claim & policy context -->
-<div class="card">
-  <h2>Claim & Policy Context</h2>
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem;">
-    <div>
-      <div style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Claimant Statement</div>
-      <p style="margin-top: 0.25rem; font-size: 0.95rem; font-style: italic;">"{{ claim.claimant_statement }}"</p>
-      <div style="margin-top: 0.75rem; font-size: 0.85rem;">
-        Claimant: <strong>{{ claim.claimant_name }}</strong> &bull; Claimed Damage: <strong>{{ claim.claimed_damage_area }}</strong>
+    <!-- Report Files Card -->
+    <div class="card-panel report-files-card">
+      <div class="report-files-title">Report files</div>
+      <div class="report-file-row">
+        <span class="report-file-desc">Sealed package &mdash; anyone can check it on Verify</span>
+        {% if claim.package_bytes %}
+          <a href="/console/claims/{{ claim.id }}/package" class="report-file-link" download>Download</a>
+        {% else %}
+          <span style="color: var(--mute); font-size: 0.76rem;">Pending</span>
+        {% endif %}
       </div>
-    </div>
-    <div>
-      <div style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Policy Record</div>
-      <div style="margin-top: 0.25rem; font-size: 0.95rem;">
-        {{ claim.color }} {{ claim.make }} {{ claim.model }}
-      </div>
-      <div style="font-size: 0.85rem; color: var(--text-muted);">
-        Plate: {{ claim.plate }} ({{ claim.state }})
+      <div class="report-file-row">
+        <span class="report-file-desc">Verify this package</span>
+        <a href="/verify" class="report-file-link">Verify</a>
       </div>
     </div>
   </div>
-</div>
-
-<!-- 8. Adjuster decision -->
-<div class="card" style="border: 2px solid var(--border);">
-  <h2>Adjuster Decision</h2>
-  <p class="subtitle" style="margin-bottom: 1rem;">
-    The AI reads and code checks; the human adjuster decides. No automatic rejections.
-  </p>
-
-  <form action="/console/claims/{{ claim.id }}/decision" method="post">
-    <div class="form-group">
-      <label for="note">Decision Note (optional)</label>
-      <input type="text" id="note" name="note" class="form-control" placeholder="Add rationale or notes for claim file...">
-    </div>
-
-    <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem;">
-      <button type="submit" name="action" value="approve" class="btn btn-approve">
-        &#10003; Approve
-      </button>
-      <button type="submit" name="action" value="recapture" class="btn btn-recapture">
-        &#8634; Request recapture
-      </button>
-      <button type="submit" name="action" value="escalate" class="btn btn-escalate">
-        &#9888; Escalate to SIU
-      </button>
-    </div>
-  </form>
-
-  {% if decisions %}
-  <div style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1rem;">
-    <h3 style="font-size: 0.95rem; color: var(--text-muted); text-transform: uppercase;">Decision Log</h3>
-    <ul style="list-style: none; margin-top: 0.5rem;">
-      {% for d in decisions %}
-      <li style="padding: 0.4rem 0; font-size: 0.88rem; border-bottom: 1px solid var(--border);">
-        <strong>{{ d.action | capitalize }}</strong>
-        {% if d.note %} &mdash; <em>{{ d.note }}</em>{% endif %}
-        <span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 0.5rem;">({{ d.timestamp[:19].replace('T', ' ') }})</span>
-      </li>
-      {% endfor %}
-    </ul>
-  </div>
-  {% endif %}
 </div>
 
 <!-- Photo Details Overlay Modal -->
 <div id="photo-overlay" class="photo-overlay" style="display: none;">
   <div class="photo-overlay-backdrop" onclick="closePhotoModal()"></div>
   <div class="photo-overlay-content">
-    <button type="button" class="photo-overlay-close" onclick="closePhotoModal()">&times;</button>
+    <button type="button" class="photo-overlay-close" onclick="closePhotoModal()" aria-label="Close modal">&times;</button>
     <div class="photo-overlay-body">
       <div class="photo-overlay-img-container">
         <img id="overlay-img" src="" alt="Full size evidence photo">
       </div>
       <div class="photo-overlay-details">
-        <h3 id="overlay-slot" style="margin-bottom: 0.5rem; color: var(--text-main);"></h3>
+        <h3 id="overlay-slot" style="margin-bottom: 0.5rem; color: var(--ink);"></h3>
         <div style="font-size: 0.85rem; margin-bottom: 0.4rem;">
-          <strong>SHA-256:</strong> <span id="overlay-sha" style="font-family: monospace; word-break: break-all; color: var(--text-muted);"></span>
+          <strong>SHA-256:</strong> <span id="overlay-sha" style="font-family: var(--font-mono); word-break: break-all; color: var(--mute);"></span>
         </div>
         <div style="font-size: 0.85rem; margin-bottom: 0.75rem;">
-          <strong>Model Used:</strong> <span id="overlay-model" class="pill pill-gray" style="font-family: monospace; text-transform: none;"></span>
+          <strong>Model Used:</strong> <span id="overlay-model" class="pill pill-gray" style="font-family: var(--font-mono); text-transform: none;"></span>
         </div>
         <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.25rem;">Raw Reading JSON:</div>
         <pre class="overlay-json-pre"><code id="overlay-json"></code></pre>
@@ -306,5 +401,27 @@ document.addEventListener('keydown', (e) => {
     closePhotoModal();
   }
 });
+
+async function labelFinding(claimId, checkName, labelValue, btn) {
+  const statusEl = document.getElementById('label-status-' + checkName);
+  try {
+    const formData = new FormData();
+    formData.append('label', labelValue);
+    const resp = await fetch('/console/claims/' + claimId + '/findings/' + checkName + '/label', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json' },
+      body: formData
+    });
+    if (resp.ok) {
+      if (statusEl) {
+        statusEl.style.display = 'inline-block';
+        statusEl.className = 'finding-label-badge ' + labelValue;
+        statusEl.textContent = labelValue === 'confirm' ? 'Confirmed by adjuster' : 'Marked false alarm';
+      }
+    }
+  } catch (err) {
+    console.error('Failed to label finding', err);
+  }
+}
 </script>
 {% endblock %}

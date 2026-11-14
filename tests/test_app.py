@@ -467,24 +467,34 @@ def test_report_page_sections_order(client: TestClient):
     assert resp.status_code == 200
     html = resp.text
 
-    # Verify order: header -> code summary -> findings table -> evidence photos -> seal box -> claim & policy context -> adjuster decision
+    # Verify order of the Evidence Desk workspace sections: Loss Notice -> What happened -> Your vehicle -> Photos -> Review -> Your decision
     pos_header = html.find(f"Claim {claim_id}")
-    pos_code_summary = html.find("Evidence Summary (Deterministic Rule Engine)")
-    pos_findings = html.find("Automated Findings")
-    pos_photos = html.find("Evidence Photos")
-    pos_seal = html.find("Digital Seal & Authenticity")
-    pos_context = html.find("Claim & Policy Context")
-    pos_decision = html.find("Adjuster Decision")
+    pos_notice = html.find("Automobile Loss Notice")
+    pos_what = html.find("1. What happened")
+    pos_vehicle = html.find("2. Your vehicle")
+    pos_photos = html.find("3. Photos")
+    pos_review = html.find("Review")
+    pos_decision = html.find("Your decision")
 
     assert pos_header != -1
-    assert pos_code_summary != -1
-    assert pos_findings != -1
+    assert pos_notice != -1
+    assert pos_what != -1
+    assert pos_vehicle != -1
     assert pos_photos != -1
-    assert pos_seal != -1
-    assert pos_context != -1
+    assert pos_review != -1
     assert pos_decision != -1
 
-    assert pos_header < pos_code_summary < pos_findings < pos_photos < pos_seal < pos_context < pos_decision
+    assert pos_header < pos_notice < pos_what < pos_vehicle < pos_photos < pos_review < pos_decision
+
+    assert pos_header != -1
+    assert pos_notice != -1
+    assert pos_what != -1
+    assert pos_vehicle != -1
+    assert pos_photos != -1
+    assert pos_review != -1
+    assert pos_decision != -1
+
+    assert pos_header < pos_notice < pos_what < pos_vehicle < pos_photos < pos_review < pos_decision
 
 
 def test_capture_page_elements_and_guides(client: TestClient):

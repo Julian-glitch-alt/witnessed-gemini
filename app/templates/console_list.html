@@ -1,68 +1,264 @@
 {% extends "base.html" %}
 
-{% block title %}Claims Console - Witnessed{% endblock %}
+{% block title %}Today - Evidence Desk{% endblock %}
 
 {% block content %}
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-  <div>
-    <h1>Claims Console</h1>
-    <p class="subtitle">Review photo evidence and policy checks</p>
+<!-- Header card -->
+<div class="card-panel today-header-card">
+  <div class="today-header-left">
+    <h1>Today</h1>
+    <p class="header-subline">{{ header_subline }}</p>
   </div>
-  <a href="/console/new" class="btn btn-primary">+ New Claim</a>
+  <a href="/console/new" class="btn-pill btn-pill-primary">New capture link</a>
 </div>
 
-<div class="card" style="padding: 0; overflow-x: auto;">
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Claim ID</th>
-        <th>Claimant</th>
-        <th>Policy Vehicle</th>
-        <th>Claimed Area</th>
-        <th>Status</th>
-        <th>Date</th>
-        <th>Action</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for claim in claims %}
-      <tr>
-        <td>
-          <a href="/console/claims/{{ claim.id }}" style="color: var(--primary); font-weight: 600; text-decoration: none;">
-            {{ claim.id }}
-          </a>
-        </td>
-        <td>{{ claim.claimant_name or "N/A" }}</td>
-        <td>{{ claim.color }} {{ claim.make }} {{ claim.model }} ({{ claim.plate or "N/A" }})</td>
-        <td><span style="text-transform: capitalize;">{{ claim.claimed_damage_area or "N/A" }}</span></td>
-        <td>
-          {% if claim.status == 'approved' %}
-            <span class="pill pill-green">Approved</span>
-          {% elif claim.status == 'ready_for_review' %}
-            <span class="pill pill-amber">Ready for Review</span>
-          {% elif claim.status == 'escalated_to_siu' %}
-            <span class="pill pill-red">Escalated SIU</span>
-          {% elif claim.status == 'recapture_requested' %}
-            <span class="pill pill-amber">Recapture Req</span>
-          {% else %}
-            <span class="pill pill-gray">{{ claim.status }}</span>
-          {% endif %}
-        </td>
-        <td style="color: var(--text-muted); font-size: 0.85rem;">{{ claim.created_at[:16].replace('T', ' ') }}</td>
-        <td>
-          <a href="/console/claims/{{ claim.id }}" class="btn btn-outline" style="padding: 0.35rem 0.75rem; font-size: 0.82rem;">
-            View
-          </a>
-        </td>
-      </tr>
-      {% else %}
-      <tr>
-        <td colspan="7" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
-          No claims yet. Click <strong>+ New Claim</strong> to create one.
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<!-- Try it in 3 steps card (dismissible, remembered in localStorage) -->
+<div id="steps-card" class="card-panel steps-card">
+  <div class="steps-title">Try it in 3 steps</div>
+  <ol class="steps-list">
+    <li><strong>New capture link</strong> &rarr; open a claim with your car's make, color and plate.</li>
+    <li><strong>Scan the QR code</strong> with your phone and take the four photos live.</li>
+    <li><strong>Come back here</strong> about a minute after sending: open the claim, read the review, then decide.</li>
+  </ol>
+  <div class="steps-actions">
+    <a href="/console/new" class="btn-pill btn-pill-primary">New capture link</a>
+    <button type="button" class="btn-pill btn-pill-outline" onclick="dismissStepsCard()">Dismiss</button>
+  </div>
 </div>
+
+<!-- Four stat cards in a row -->
+<div class="stats-row">
+  <div class="stat-card stat-blue">
+    <div class="stat-label">Waiting for your decision</div>
+    <div class="stat-number">{{ waiting_decision_count }}</div>
+    <div class="stat-subline">
+      {% if mismatch_count > 0 %}
+        {{ mismatch_count }} with a mismatch
+      {% else %}
+        0 with a mismatch
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-label">Mismatch found</div>
+    <div class="stat-number">{{ mismatch_count }}</div>
+    <div class="stat-subline">
+      {% if mismatch_count > 0 %}
+        Requires adjuster review
+      {% else %}
+        Nothing overdue
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-label">Waiting for the claimant</div>
+    <div class="stat-number">{{ waiting_claimant_count }}</div>
+    <div class="stat-subline">
+      {% if latest_waiting_claimant %}
+        just now, {{ latest_waiting_claimant }}, no photos yet
+      {% else %}
+        None waiting
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-label">Link to report</div>
+    <div class="stat-number">{{ avg_minutes }} min<span class="stat-unit">average</span></div>
+    <div class="stat-subline">From link sent to report ready</div>
+  </div>
+</div>
+
+<!-- Dashboard 2 columns: Claims table (~70%) + Right column (~30%) -->
+<div class="dashboard-columns">
+  <!-- Claims Section -->
+  <div class="card-panel claims-section-card">
+    <div class="claims-section-header">
+      <div class="claims-title-wrap">
+        <h2>Claims</h2>
+        <span class="claims-how-link">How to read the labels</span>
+      </div>
+
+      <div class="filter-pills-bar">
+        <button type="button" class="filter-pill-btn active" data-filter="all" onclick="applyClaimsFilter('all', this)">
+          All {{ counts.all }}
+        </button>
+        <button type="button" class="filter-pill-btn" data-filter="needs_me" onclick="applyClaimsFilter('needs_me', this)">
+          Needs me {{ counts.needs_me }}
+        </button>
+        <button type="button" class="filter-pill-btn" data-filter="mismatch" onclick="applyClaimsFilter('mismatch', this)">
+          Mismatch {{ counts.mismatch }}
+        </button>
+        <button type="button" class="filter-pill-btn" data-filter="waiting" onclick="applyClaimsFilter('waiting', this)">
+          Waiting for claimant {{ counts.waiting }}
+        </button>
+        <button type="button" class="filter-pill-btn" data-filter="decided" onclick="applyClaimsFilter('decided', this)">
+          Decided {{ counts.decided }}
+        </button>
+      </div>
+    </div>
+
+    <div class="claims-table-wrapper">
+      <table class="claims-table">
+        <thead>
+          <tr>
+            <th>Claimant</th>
+            <th>Claim</th>
+            <th>Suggested lane</th>
+            <th>Why it is here</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for claim in claims %}
+          <tr class="claim-row" data-lane="{{ claim.lane }}" data-status="{{ claim.status }}" onclick="window.location.href='/console/claims/{{ claim.id }}'">
+            <td>
+              <div class="claimant-cell">
+                <div class="claimant-initials">{{ claim.initials }}</div>
+                <div class="claimant-info">
+                  <span class="claimant-name">{{ claim.claimant_name }}</span>
+                  <span class="claimant-vehicle">{{ claim.vehicle_str }}</span>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="claim-id-mono">{{ claim.id }}</div>
+              <div class="claim-area-sub">{{ claim.claimed_damage_area }}</div>
+            </td>
+            <td>
+              {% if claim.lane == 'mismatch' %}
+                <span class="pill pill-red">Mismatch</span>
+              {% elif claim.lane == 'review' %}
+                <span class="pill pill-amber">Review</span>
+              {% elif claim.lane == 'clear' %}
+                <span class="pill pill-green">Clear</span>
+              {% else %}
+                <span class="pill pill-gray">Waiting</span>
+              {% endif %}
+            </td>
+            <td class="why-cell">
+              {{ claim.why_here }}
+            </td>
+            <td class="updated-cell">
+              {{ claim.updated_relative }}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" style="text-align: center; padding: 40px; color: var(--mute);">
+              No claims yet. Click <strong>New capture link</strong> above to create one.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Right Column -->
+  <div class="dashboard-right-col">
+    <!-- Claims this week -->
+    <div class="card-panel widget-card">
+      <div class="widget-header">
+        <span class="widget-title">Claims this week</span>
+        <span class="widget-sub">{{ counts.all }} total</span>
+      </div>
+
+      <div class="weekly-bars-container">
+        {% for d in chart_days %}
+        <div class="bar-col">
+          <span class="bar-val">{{ d.total }}</span>
+          <div class="bar-track">
+            {% if d.total > 0 %}
+              <div class="bar-fill" style="height: {{ d.height_pct }}%;"></div>
+            {% else %}
+              <div class="bar-fill" style="height: 6px; opacity: 0.25;"></div>
+            {% endif %}
+          </div>
+          <span class="bar-day">{{ d.day }}</span>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="chart-legend">
+        <div class="legend-item"><span class="legend-dot green"></span> Clear</div>
+        <div class="legend-item"><span class="legend-dot blue"></span> Waiting</div>
+        <div class="legend-item"><span class="legend-dot amber"></span> Review</div>
+        <div class="legend-item"><span class="legend-dot red"></span> Mismatch</div>
+      </div>
+    </div>
+
+    <!-- Gemini today -->
+    <div class="card-panel widget-card">
+      <div class="widget-header">
+        <span class="widget-title">Gemini today</span>
+        <span class="widget-sub">Live inference</span>
+      </div>
+
+      <div class="gemini-stats-list">
+        <div class="gemini-stat-row">
+          <span class="gemini-stat-label">Photos read</span>
+          <span class="gemini-stat-val">{{ photos_read }}</span>
+        </div>
+        <div class="gemini-stat-row">
+          <span class="gemini-stat-label">Average reading time</span>
+          <span class="gemini-stat-val">1.8s</span>
+        </div>
+        <div class="gemini-stat-row">
+          <span class="gemini-stat-label">Readings unchecked</span>
+          <span class="gemini-stat-val">{{ readings_unchecked }}</span>
+        </div>
+        <div class="gemini-stat-row">
+          <span class="gemini-stat-label">Model used most</span>
+          <span class="gemini-stat-val" style="font-family: var(--font-mono); font-size: 0.76rem;">{{ model_used_most }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function dismissStepsCard() {
+  const el = document.getElementById('steps-card');
+  if (el) {
+    el.style.display = 'none';
+    try { localStorage.setItem('evidence_desk_steps_dismissed', '1'); } catch(e) {}
+  }
+}
+
+function applyClaimsFilter(filter, btn) {
+  document.querySelectorAll('.filter-pill-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  const rows = document.querySelectorAll('table.claims-table tbody tr.claim-row');
+  rows.forEach(r => {
+    const lane = r.getAttribute('data-lane');
+    const status = r.getAttribute('data-status');
+    let show = true;
+    if (filter === 'needs_me') {
+      show = (status === 'ready_for_review');
+    } else if (filter === 'mismatch') {
+      show = (lane === 'mismatch');
+    } else if (filter === 'waiting') {
+      show = (status === 'pending_capture');
+    } else if (filter === 'decided') {
+      show = ['approved', 'recapture_requested', 'escalated_to_siu'].includes(status);
+    } else {
+      show = true;
+    }
+    r.style.display = show ? '' : 'none';
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    if (localStorage.getItem('evidence_desk_steps_dismissed') === '1') {
+      const el = document.getElementById('steps-card');
+      if (el) el.style.display = 'none';
+    }
+  } catch(e) {}
+});
+</script>
 {% endblock %}
