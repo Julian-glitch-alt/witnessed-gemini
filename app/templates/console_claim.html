@@ -220,7 +220,7 @@
               <div style="margin-bottom: 4px;">
                 {{ s.text }}
                 {% for cite in s.cites %}
-                  <span class="cite-pill">{{ cite }}</span>
+                  <span class="cite-pill">{{ human_labels.get(cite, cite) }}</span>
                 {% endfor %}
               </div>
             {% endfor %}
@@ -229,8 +229,8 @@
             AI summary (checked against findings) &bull; Gemini &middot; sentences checked against the findings
           </div>
         {% endif %}
-        <div class="code-summary-box" style="margin-top: {% if ai_summary and ai_summary.sentences %}10px{% else %}0{% endif %}; font-size: 0.84rem; color: var(--ink); line-height: 1.45;">
-          <strong>Evidence Summary (Deterministic Rule Engine):</strong> {{ summary_line }}
+        <div class="code-summary-box" style="margin-top: {% if ai_summary and ai_summary.sentences %}10px{% else %}0{% endif %}; font-size: 0.84rem; color: var(--ink); line-height: 1.45;" data-line="Checks: {{ summary_line }}">
+          <strong>Checks:</strong> {{ summary_line }}
         </div>
       </div>
 
@@ -256,6 +256,7 @@
                 <div class="finding-item-row findings-row-{{ f.status }}">
                   <div class="finding-num-circle {{ f.status }}">{{ f.number }}</div>
                   <div class="finding-content">
+                    <div class="finding-title" style="font-weight: 700; font-size: 0.88rem; color: var(--ink); margin-bottom: 2px;">{{ f.label }}</div>
                     <div class="finding-reason-text">{{ f.reason }}</div>
                     <div class="finding-check-sub">{{ f.check_name }}</div>
                     <div class="finding-actions-row">

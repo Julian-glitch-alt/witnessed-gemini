@@ -157,7 +157,7 @@ def test_full_flow_with_four_jpegs_shows_findings(client: TestClient):
     assert "damage_location" in text
     assert "damage_present" in text
     assert "vin_format" in text
-    assert "Evidence Summary" in text
+    assert "Checks:" in text
     assert "Sealed. Ed25519 signature is valid" in text
 
 
@@ -379,7 +379,7 @@ def test_honest_wording_with_issues_shows_review_count(client: TestClient):
     assert report_resp.status_code == 200
     html = report_resp.text
 
-    assert "issue(s) need review" in html
+    assert ("issue needs review" in html or "issues need review" in html)
     assert "Review" in html
 
 

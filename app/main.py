@@ -1,9 +1,10 @@
 import base64
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import random
 import secrets
@@ -37,6 +38,16 @@ SLOT_SCHEMAS: dict[str, type[Any]] = {
 }
 
 VALID_SLOTS = {"wide", "damage", "plate", "vin"}
+
+HUMAN_LABELS: dict[str, str] = {
+    "plate_match": "Plate",
+    "vehicle_match": "Vehicle",
+    "vin_format": "VIN",
+    "damage_present": "Damage visible",
+    "damage_location": "Damage location",
+    "duplicate_photo": "Duplicate photo",
+    "photo_reused": "Photo reused",
+}
 
 
 @asynccontextmanager
@@ -109,13 +120,38 @@ def compute_claim_lane(claim: Any, claim_findings: list[Any]) -> tuple[str, int,
     if claim["status"] == "pending_capture":
         return ("waiting", 3, "No photos yet.")
 
-    reds = [f for f in claim_findings if f["status"] == "red"]
-    if reds:
-        return ("mismatch", 0, reds[0]["reason"])
+    def _field(f: Any, key: str) -> str:
+        if hasattr(f, "__getitem__"):
+            try:
+                return str(f[key] or "")
+            except (KeyError, IndexError, TypeError):
+                pass
+        return str(getattr(f, key, "") or "")
 
-    ambers = [f for f in claim_findings if f["status"] == "amber"]
+    def _status(f: Any) -> str:
+        return _field(f, "status")
+
+    def _chk_name(f: Any) -> str:
+        name = _field(f, "check_name")
+        if not name:
+            name = _field(f, "check")
+        return name
+
+    reds = [f for f in claim_findings if _status(f) == "red"]
+    if reds:
+        chk = _chk_name(reds[0])
+        label = HUMAN_LABELS.get(chk, chk)
+        reason = _field(reds[0], "reason")
+        why = f"{label}: {reason}" if label else reason
+        return ("mismatch", 0, why)
+
+    ambers = [f for f in claim_findings if _status(f) == "amber"]
     if ambers:
-        return ("review", 1, ambers[0]["reason"])
+        chk = _chk_name(ambers[0])
+        label = HUMAN_LABELS.get(chk, chk)
+        reason = _field(ambers[0], "reason")
+        why = f"{label}: {reason}" if label else reason
+        return ("review", 1, why)
 
     return ("clear", 2, "All checks matched.")
 
@@ -137,9 +173,17 @@ def build_findings_summary(findings: list[Any]) -> str:
         except Exception:
             return f["check"]
 
-    issues = [_check(f) for f in findings if _status(f) in ("red", "amber")]
+    issues = [
+        HUMAN_LABELS.get(_check(f), _check(f))
+        for f in findings
+        if _status(f) in ("red", "amber")
+    ]
     if issues:
-        return f"{len(issues)} issue(s) need review: {', '.join(issues)}"
+        count = len(issues)
+        if count == 1:
+            return f"1 issue needs review: {issues[0]}."
+        else:
+            return f"{count} issues need review: {', '.join(issues)}."
     return "No issues found by the automated checks. The adjuster makes the decision."
 
 
@@ -219,26 +263,86 @@ async def console_list(request: Request):
     else:
         model_used_most = "gemini-2.5-flash"
 
-    days = ["Wed", "Thu", "Fri", "Sat", "Sun", "Mon", "Tue"]
+    # Claims this week: bars are the last 7 days ending today in the server's local date
+    today_local = datetime.now().date()
+    dates_7 = [today_local - timedelta(days=6 - i) for i in range(7)]
+
+    def _get_local_date(iso_str: str | None) -> date | None:
+        if not iso_str:
+            return None
+        try:
+            dt = datetime.fromisoformat(iso_str)
+            if dt.tzinfo is not None:
+                return dt.astimezone().date()
+            return dt.date()
+        except Exception:
+            return None
+
+    day_claims_map: dict[date, list[Any]] = {d: [] for d in dates_7}
+    for c in claim_items:
+        c_date = _get_local_date(c["created_at"])
+        if c_date in day_claims_map:
+            day_claims_map[c_date].append(c)
+
+    max_day_claims = max((len(day_claims_map[d]) for d in dates_7), default=0)
+
     chart_days = []
-    for d in days:
+    for d_date in dates_7:
+        d_claims = day_claims_map[d_date]
+        total_d = len(d_claims)
+        clear_d = sum(1 for c in d_claims if c["lane"] == "clear")
+        review_d = sum(1 for c in d_claims if c["lane"] == "review")
+        mismatch_d = sum(1 for c in d_claims if c["lane"] == "mismatch")
+        waiting_d = sum(1 for c in d_claims if c["lane"] == "waiting")
+
+        segments = []
+        if total_d > 0:
+            if clear_d > 0:
+                segments.append({
+                    "lane": "Clear",
+                    "color": "green",
+                    "count": clear_d,
+                    "pct": (clear_d / total_d) * 100,
+                })
+            if review_d > 0:
+                segments.append({
+                    "lane": "Review",
+                    "color": "amber",
+                    "count": review_d,
+                    "pct": (review_d / total_d) * 100,
+                })
+            if mismatch_d > 0:
+                segments.append({
+                    "lane": "Mismatch",
+                    "color": "red",
+                    "count": mismatch_d,
+                    "pct": (mismatch_d / total_d) * 100,
+                })
+            if waiting_d > 0:
+                segments.append({
+                    "lane": "Waiting",
+                    "color": "gray",
+                    "count": waiting_d,
+                    "pct": (waiting_d / total_d) * 100,
+                })
+            height_pct = min(100, max(24, int((total_d / max(max_day_claims, 1)) * 100)))
+        else:
+            height_pct = 0
+
         chart_days.append({
-            "day": d,
-            "total": 0,
-            "clear": 0,
-            "review": 0,
-            "mismatch": 0,
-            "waiting": 0,
-            "height_pct": 10,
+            "date": d_date.isoformat(),
+            "day": d_date.strftime("%a"),
+            "total": total_d,
+            "clear": clear_d,
+            "review": review_d,
+            "mismatch": mismatch_d,
+            "waiting": waiting_d,
+            "height_pct": height_pct,
+            "segments": segments,
         })
-    if chart_days:
-        last_day = chart_days[-1]
-        last_day["total"] = total_claims
-        last_day["clear"] = sum(1 for c in claim_items if c["lane"] == "clear")
-        last_day["review"] = sum(1 for c in claim_items if c["lane"] == "review")
-        last_day["mismatch"] = mismatch_count
-        last_day["waiting"] = waiting_claimant_count
-        last_day["height_pct"] = min(100, max(24, total_claims * 24))
+
+    model_provider = os.getenv("MODEL_PROVIDER", "fake").strip().lower()
+    model_status_label = "Live inference" if model_provider == "gemini" else "Demo data (fake model)"
 
     counts = {
         "needs_me": waiting_decision_count,
@@ -266,6 +370,7 @@ async def console_list(request: Request):
             "chart_days": chart_days,
             "needs_decision_count": waiting_decision_count,
             "active_nav": "today",
+            "model_status_label": model_status_label,
         },
     )
 
@@ -709,6 +814,23 @@ async def claim_report(request: Request, id: str):
         "SELECT id FROM claims WHERE status = 'ready_for_review' ORDER BY created_at DESC"
     ).fetchall()
     needs_decision_count = len(queue_rows)
+
+    reused_slots = set()
+    for s, p in photos.items():
+        if p and "sha256" in p.keys() and p["sha256"]:
+            sha = p["sha256"]
+            row = conn.execute(
+                """
+                SELECT 1 FROM photos
+                JOIN sessions ON photos.session_token = sessions.token
+                WHERE photos.sha256 = ? AND sessions.claim_id != ?
+                LIMIT 1
+                """,
+                (sha, id),
+            ).fetchone()
+            if row:
+                reused_slots.add(s)
+
     conn.close()
 
     queue_ids = [r["id"] for r in queue_rows]
@@ -747,98 +869,97 @@ async def claim_report(request: Request, id: str):
     group_definitions = [
         {
             "id": "vehicle_and_plate",
-            "title": "1. Vehicle and plate",
+            "name": "Vehicle and plate",
             "checks": ["plate_match", "vehicle_match", "vin_format"],
         },
         {
             "id": "damage",
-            "title": "2. Damage",
+            "name": "Damage",
             "checks": ["damage_present", "damage_location"],
         },
         {
             "id": "photo_integrity",
-            "title": "3. Photo integrity",
+            "name": "Photo integrity",
             "checks": ["duplicate_photo", "photo_reused"],
         },
     ]
 
-    all_numbered_findings = []
-    groups = []
-    finding_num = 1
-    slot_markers: dict[str, int] = {}
-    slot_borders: dict[str, str] = {}
-
-    check_to_slot = {
-        "plate_match": "plate",
-        "vehicle_match": "wide",
-        "vin_format": "vin",
-        "damage_present": "damage",
-        "damage_location": "damage",
-    }
+    severity_order = {"red": 0, "amber": 1, "unchecked": 2, "green": 3}
 
     seen_checks = set()
+    raw_groups = []
     for g_def in group_definitions:
         g_findings = []
         for chk in g_def["checks"]:
             f_row = next((f for f in findings_rows if f["check_name"] == chk), None)
             if f_row:
                 seen_checks.add(chk)
-                item = {
-                    "number": finding_num,
-                    "check_name": f_row["check_name"],
-                    "status": f_row["status"],
-                    "reason": f_row["reason"],
-                    "adjuster_label": (
-                        f_row["adjuster_label"]
-                        if "adjuster_label" in f_row.keys()
-                        else None
-                    ),
-                }
-                g_findings.append(item)
-                all_numbered_findings.append(item)
+                g_findings.append(f_row)
 
-                slot = check_to_slot.get(chk)
-                if slot and item["status"] in ("red", "amber"):
-                    if slot not in slot_borders or item["status"] == "red":
-                        slot_borders[slot] = item["status"]
-                        slot_markers[slot] = finding_num
-                elif chk in ("duplicate_photo", "photo_reused") and item["status"] in ("red", "amber"):
-                    for s in ("wide", "damage", "plate", "vin"):
-                        if s in item["reason"] or chk == "duplicate_photo":
-                            if s not in slot_borders or item["status"] == "red":
-                                slot_borders[s] = item["status"]
-                                slot_markers[s] = finding_num
+        g_findings.sort(key=lambda f: severity_order.get(f["status"], 99))
 
-                finding_num += 1
-
-        if any(f["status"] == "red" for f in g_findings):
+        worst_sev = min((severity_order.get(f["status"], 99) for f in g_findings), default=2)
+        if worst_sev == 0:
             g_status = "red"
             g_status_label = "Mismatch"
-        elif any(f["status"] == "amber" for f in g_findings):
+        elif worst_sev == 1:
             g_status = "amber"
             g_status_label = "Review"
-        elif any(f["status"] == "green" for f in g_findings):
-            g_status = "green"
-            g_status_label = "Match"
-        else:
+        elif worst_sev == 2:
             g_status = "unchecked"
             g_status_label = "Unchecked"
+        else:
+            g_status = "green"
+            g_status_label = "Match"
 
-        groups.append({
+        raw_groups.append({
             "id": g_def["id"],
-            "title": g_def["title"],
+            "name": g_def["name"],
             "findings": g_findings,
+            "worst_sev": worst_sev,
             "status": g_status,
             "status_label": g_status_label,
         })
 
     other_findings = [f for f in findings_rows if f["check_name"] not in seen_checks]
     if other_findings:
-        g_findings = []
-        for f_row in other_findings:
+        other_findings.sort(key=lambda f: severity_order.get(f["status"], 99))
+        other_worst = min((severity_order.get(f["status"], 99) for f in other_findings), default=2)
+        if other_worst == 0:
+            o_status = "red"
+            o_label = "Mismatch"
+        elif other_worst == 1:
+            o_status = "amber"
+            o_label = "Review"
+        elif other_worst == 2:
+            o_status = "unchecked"
+            o_label = "Unchecked"
+        else:
+            o_status = "green"
+            o_label = "Match"
+
+        raw_groups.append({
+            "id": "other",
+            "name": "Other checks",
+            "findings": other_findings,
+            "worst_sev": other_worst,
+            "status": o_status,
+            "status_label": o_label,
+        })
+
+    raw_groups.sort(key=lambda g: g["worst_sev"])
+
+    all_numbered_findings = []
+    groups = []
+    finding_num = 1
+    for idx, g in enumerate(raw_groups, start=1):
+        numbered_findings = []
+        for f_row in g["findings"]:
+            chk = f_row["check_name"]
             item = {
                 "number": finding_num,
-                "check_name": f_row["check_name"],
+                "check_name": chk,
+                "label": HUMAN_LABELS.get(chk, chk),
                 "status": f_row["status"],
                 "reason": f_row["reason"],
                 "adjuster_label": (
@@ -847,16 +968,54 @@ async def claim_report(request: Request, id: str):
                     else None
                 ),
             }
-            g_findings.append(item)
+            numbered_findings.append(item)
             all_numbered_findings.append(item)
             finding_num += 1
+
         groups.append({
-            "id": "other",
-            "title": f"{len(groups) + 1}. Other checks",
-            "findings": g_findings,
-            "status": "amber" if any(f["status"] in ("red", "amber") for f in g_findings) else "green",
-            "status_label": "Review" if any(f["status"] in ("red", "amber") for f in g_findings) else "Match",
+            "id": g["id"],
+            "title": f"{idx}. {g['name']}",
+            "findings": numbered_findings,
+            "status": g["status"],
+            "status_label": g["status_label"],
         })
+
+    sha_to_slots: dict[str, list[str]] = {}
+    for s, p in photos.items():
+        if p and "sha256" in p.keys() and p["sha256"]:
+            sha_to_slots.setdefault(p["sha256"], []).append(s)
+    duplicate_slots = {
+        s for sha, slist in sha_to_slots.items() if len(slist) > 1 for s in slist
+    }
+
+    slot_markers: dict[str, int] = {}
+    slot_borders: dict[str, str] = {}
+
+    for item in all_numbered_findings:
+        if item["status"] not in ("red", "amber"):
+            continue
+        chk = item["check_name"]
+        inv_slots: list[str] = []
+        if chk == "plate_match":
+            inv_slots = ["plate"]
+        elif chk == "vehicle_match":
+            inv_slots = ["wide"]
+        elif chk == "vin_format":
+            inv_slots = ["vin"]
+        elif chk in ("damage_present", "damage_location"):
+            inv_slots = ["damage", "wide"]
+        elif chk == "duplicate_photo":
+            inv_slots = [s for s in ("wide", "damage", "plate", "vin") if s in duplicate_slots]
+        elif chk == "photo_reused":
+            inv_slots = [s for s in ("wide", "damage", "plate", "vin") if s in reused_slots]
+
+        for s in inv_slots:
+            if s not in slot_borders:
+                slot_borders[s] = item["status"]
+                slot_markers[s] = item["number"]
+            elif slot_borders[s] == "amber" and item["status"] == "red":
+                slot_borders[s] = "red"
+                slot_markers[s] = item["number"]
 
     has_issues = any(f["status"] in ("red", "amber") for f in findings_rows)
     if has_issues:
@@ -922,6 +1081,7 @@ async def claim_report(request: Request, id: str):
             "next_claim_id": next_claim_id,
             "needs_decision_count": needs_decision_count,
             "active_nav": "claim",
+            "human_labels": HUMAN_LABELS,
         },
     )
 

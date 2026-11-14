@@ -219,7 +219,7 @@ def test_report_page_omits_ai_summary_when_summarize_fails(monkeypatch):
         # Failed AI summary must not be shown
         assert "AI summary (checked against findings)" not in html
         # Only the code summary is shown
-        assert "Evidence Summary (Deterministic Rule Engine)" in html
+        assert "Checks:" in html
 
 
 def test_gemini_provider_summarize_mocked():

@@ -1,0 +1,11 @@
+Read AGENTS.md and SPEC.md first. Steps 1–5 are done (77 passing tests); do not break them. Small review fixes only:
+
+1. Sidebar: remove the "Admin" section (Settings, System health, Developers). Those pages do not exist; no dead links anywhere.
+2. Claim workspace, Review card: order the groups and the items inside them so red findings come first, then amber, then unchecked, then green; number findings in that order. A group's pill is the worst status in it.
+3. Claim workspace, photos: a figure whose slot is involved in a red or amber finding (plate_match → plate; vehicle_match → wide; vin_format → vin; damage_present and damage_location → damage and wide; duplicate_photo and photo_reused → the slot(s) whose image is duplicated or reused) gets a red or amber 2px border and a small numbered marker matching that finding's number.
+4. Replace the line "Evidence Summary (Deterministic Rule Engine): 1 issue(s) need review: photo_reused" with "Checks: 1 issue needs review: Photo reused." using human labels: plate_match "Plate", vehicle_match "Vehicle", vin_format "VIN", damage_present "Damage visible", damage_location "Damage location", duplicate_photo "Duplicate photo", photo_reused "Photo reused". Use the same human labels in the Today table, the finding items (keep the check id as the small mono line) and the AI summary citation pills. Correct singular/plural.
+5. "Claims this week": bars are the last 7 days ending today in the server's local date, each labeled with the correct weekday abbreviation for that date; today's bar is last. Stack bar segments by lane color (Clear green, Review amber, Mismatch red, Waiting gray), using the lane each claim has now.
+6. "Gemini today" card: if `MODEL_PROVIDER` is not `gemini`, label it "Demo data (fake model)" instead of "Live inference".
+7. Today table, "Claim" column: keep the claim id on one line (no wrapping inside the id).
+
+Add or adjust tests for 1, 2, 4 and 5. Shell access is limited to `uv pip install --python .venv/bin/python -r requirements.txt` and `.venv/bin/python -m pytest -q`. Never run any other command (a blocked command ends your session and loses your work). Do not read files inside .venv. Run pytest at the end and report the exact result.

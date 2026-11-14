@@ -834,6 +834,7 @@ table.claims-table tbody tr.claim-row:hover td {
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--ink);
+  white-space: nowrap;
 }
 
 .claim-area-sub {
@@ -955,9 +956,18 @@ table.claims-table tbody tr.claim-row:hover td {
 }
 
 .legend-dot.green { background: #0f7b6f; }
-.legend-dot.blue { background: #1673e6; }
 .legend-dot.amber { background: #a66206; }
 .legend-dot.red { background: #c4441a; }
+.legend-dot.gray { background: #94a3b8; }
+.legend-dot.blue { background: #1673e6; }
+
+.bar-segment {
+  width: 100%;
+}
+.bar-segment.green { background: #0f7b6f; }
+.bar-segment.amber { background: #a66206; }
+.bar-segment.red { background: #c4441a; }
+.bar-segment.gray { background: #94a3b8; }
 
 /* Gemini today stats widget */
 .gemini-stats-list {
@@ -1137,11 +1147,11 @@ table.claims-table tbody tr.claim-row:hover td {
 }
 
 .paper-photo-box.border-red {
-  border: 2.5px solid var(--bad-text);
+  border: 2px solid var(--bad-text);
 }
 
 .paper-photo-box.border-amber {
-  border: 2.5px solid var(--review-text);
+  border: 2px solid var(--review-text);
 }
 
 .paper-photo-img {

@@ -124,7 +124,7 @@
               </div>
             </td>
             <td>
-              <div class="claim-id-mono">{{ claim.id }}</div>
+              <div class="claim-id-mono" style="white-space: nowrap;">{{ claim.id }}</div>
               <div class="claim-area-sub">{{ claim.claimed_damage_area }}</div>
             </td>
             <td>
@@ -172,7 +172,11 @@
           <span class="bar-val">{{ d.total }}</span>
           <div class="bar-track">
             {% if d.total > 0 %}
-              <div class="bar-fill" style="height: {{ d.height_pct }}%;"></div>
+              <div class="bar-stack" style="height: {{ d.height_pct }}%; width: 100%; display: flex; flex-direction: column-reverse; overflow: hidden; border-radius: 999px;">
+                {% for seg in d.segments %}
+                  <div class="bar-segment {{ seg.color }}" style="height: {{ seg.pct }}%; width: 100%;" title="{{ seg.lane }}: {{ seg.count }}"></div>
+                {% endfor %}
+              </div>
             {% else %}
               <div class="bar-fill" style="height: 6px; opacity: 0.25;"></div>
             {% endif %}
@@ -184,9 +188,9 @@
 
       <div class="chart-legend">
         <div class="legend-item"><span class="legend-dot green"></span> Clear</div>
-        <div class="legend-item"><span class="legend-dot blue"></span> Waiting</div>
         <div class="legend-item"><span class="legend-dot amber"></span> Review</div>
         <div class="legend-item"><span class="legend-dot red"></span> Mismatch</div>
+        <div class="legend-item"><span class="legend-dot gray"></span> Waiting</div>
       </div>
     </div>
 
@@ -194,7 +198,7 @@
     <div class="card-panel widget-card">
       <div class="widget-header">
         <span class="widget-title">Gemini today</span>
-        <span class="widget-sub">Live inference</span>
+        <span class="widget-sub">{{ model_status_label }}</span>
       </div>
 
       <div class="gemini-stats-list">
