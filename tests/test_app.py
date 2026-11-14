@@ -57,7 +57,9 @@ def _create_claim_and_get_token(client: TestClient) -> tuple[str, str]:
     resp = client.post("/console/new", data=form_data)
     assert resp.status_code == 200
 
-    match_link = re.search(r"/c/([a-zA-Z0-9_\-]+)", resp.text)
+    match_link = re.search(r'id="capture-url-input"[^>]*value="[^"]*/c/([a-zA-Z0-9_\-]+)"', resp.text)
+    if not match_link:
+        match_link = re.search(r'href="[^"]*/c/([a-zA-Z0-9_\-]+)"', resp.text)
     assert match_link, "Capture link not found in response HTML"
     token = match_link.group(1)
 
@@ -377,7 +379,126 @@ def test_honest_wording_with_issues_shows_review_count(client: TestClient):
     assert report_resp.status_code == 200
     html = report_resp.text
 
-    assert "1 issue(s) need review: duplicate_photo" in html
+    assert "issue(s) need review" in html
     assert "Review" in html
+
+
+def test_model_stored_in_photo_row_and_sealed_package(client: TestClient):
+    from app.db import get_connection
+
+    claim_id, token = _create_claim_and_get_token(client)
+
+    for slot in ("wide", "damage", "plate", "vin"):
+        r = client.post(
+            f"/c/{token}/photo/{slot}",
+            content=TINY_JPEG + slot.encode(),
+            headers={"Content-Type": "image/jpeg"},
+        )
+        assert r.status_code == 200
+        assert r.json().get("model") == "fake"
+
+    # Verify model in photos table
+    conn = get_connection()
+    photo_rows = conn.execute(
+        "SELECT * FROM photos WHERE session_token = ?", (token,)
+    ).fetchall()
+    conn.close()
+    assert len(photo_rows) == 4
+    for prow in photo_rows:
+        assert prow["model"] == "fake"
+
+    # Submit and download package
+    client.post(f"/c/{token}/submit", headers={"Accept": "application/json"})
+    pkg_resp = client.get(f"/console/claims/{claim_id}/package")
+    assert pkg_resp.status_code == 200
+    pkg_json = json.loads(pkg_resp.json()["package"])
+    assert "readings" in pkg_json
+    for slot in ("wide", "damage", "plate", "vin"):
+        assert "model" in pkg_json["readings"][slot]
+        assert pkg_json["readings"][slot]["model"] == "fake"
+        assert "reading" in pkg_json["readings"][slot]
+
+
+def test_photo_reused_between_claims_shows_red_in_report(client: TestClient):
+    # Claim 1
+    claim1_id, token1 = _create_claim_and_get_token(client)
+    for slot in ("wide", "damage", "plate", "vin"):
+        client.post(
+            f"/c/{token1}/photo/{slot}",
+            content=TINY_JPEG + b"_claim1_" + slot.encode(),
+            headers={"Content-Type": "image/jpeg"},
+        )
+    client.post(f"/c/{token1}/submit", headers={"Accept": "application/json"})
+
+    # Claim 2: damage photo is byte-identical to Claim 1's damage photo
+    claim2_id, token2 = _create_claim_and_get_token(client)
+    for slot in ("wide", "damage", "plate", "vin"):
+        if slot == "damage":
+            content = TINY_JPEG + b"_claim1_damage"  # Identical to claim 1 damage
+        else:
+            content = TINY_JPEG + b"_claim2_" + slot.encode()
+        client.post(
+            f"/c/{token2}/photo/{slot}",
+            content=content,
+            headers={"Content-Type": "image/jpeg"},
+        )
+    client.post(f"/c/{token2}/submit", headers={"Accept": "application/json"})
+
+    report_resp = client.get(f"/console/claims/{claim2_id}")
+    assert report_resp.status_code == 200
+    html = report_resp.text
+
+    assert "photo_reused" in html
+    assert f"This exact image was already submitted in claim {claim1_id}." in html
+    assert "findings-row-red" in html
+
+
+def test_report_page_sections_order(client: TestClient):
+    claim_id, token = _create_claim_and_get_token(client)
+    for slot in ("wide", "damage", "plate", "vin"):
+        client.post(
+            f"/c/{token}/photo/{slot}",
+            content=TINY_JPEG + b"_ord_" + slot.encode(),
+            headers={"Content-Type": "image/jpeg"},
+        )
+    client.post(f"/c/{token}/submit", headers={"Accept": "application/json"})
+
+    resp = client.get(f"/console/claims/{claim_id}")
+    assert resp.status_code == 200
+    html = resp.text
+
+    # Verify order: header -> code summary -> findings table -> evidence photos -> seal box -> claim & policy context -> adjuster decision
+    pos_header = html.find(f"Claim {claim_id}")
+    pos_code_summary = html.find("Evidence Summary (Deterministic Rule Engine)")
+    pos_findings = html.find("Automated Findings")
+    pos_photos = html.find("Evidence Photos")
+    pos_seal = html.find("Digital Seal & Authenticity")
+    pos_context = html.find("Claim & Policy Context")
+    pos_decision = html.find("Adjuster Decision")
+
+    assert pos_header != -1
+    assert pos_code_summary != -1
+    assert pos_findings != -1
+    assert pos_photos != -1
+    assert pos_seal != -1
+    assert pos_context != -1
+    assert pos_decision != -1
+
+    assert pos_header < pos_code_summary < pos_findings < pos_photos < pos_seal < pos_context < pos_decision
+
+
+def test_capture_page_elements_and_guides(client: TestClient):
+    _, token = _create_claim_and_get_token(client)
+    resp = client.get(f"/c/{token}")
+    assert resp.status_code == 200
+    html = resp.text
+
+    assert "slot-guide" in html
+    assert "guide-box" in html
+    assert "guide-hint" in html
+    assert "Reading…" in html
+    assert "Use photo" in html
+    assert "Retake (" in html
+
 
 

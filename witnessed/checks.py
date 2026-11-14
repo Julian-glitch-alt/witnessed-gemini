@@ -113,8 +113,44 @@ def check_duplicate_photo(photos: dict[str, str] | None) -> Finding:
     )
 
 
+def check_photo_reused(
+    photos: dict[str, str] | None,
+    reused_photos: dict[str, str] | None = None,
+) -> Finding:
+    if not photos or not reused_photos:
+        return Finding(
+            check="photo_reused",
+            status="green",
+            reason="No submitted photos appear in other claims.",
+        )
+
+    standard_slots = ["wide", "damage", "plate", "vin"]
+    ordered_slots = [s for s in standard_slots if s in photos] + [
+        s for s in photos if s not in standard_slots
+    ]
+
+    for slot in ordered_slots:
+        sha = photos.get(slot)
+        if sha and sha in reused_photos:
+            other_claim_id = reused_photos[sha]
+            return Finding(
+                check="photo_reused",
+                status="red",
+                reason=f"This exact image was already submitted in claim {other_claim_id}.",
+            )
+
+    return Finding(
+        check="photo_reused",
+        status="green",
+        reason="No submitted photos appear in other claims.",
+    )
+
+
 def run_checks(
-    policy: Any, readings: Any, photos: dict[str, str] | None = None
+    policy: Any,
+    readings: Any,
+    photos: dict[str, str] | None = None,
+    reused_photos: dict[str, str] | None = None,
 ) -> list[Finding]:
     """Execute the plain-code checks comparing policy, AI readings, and photos."""
     findings: list[Finding] = []
@@ -342,8 +378,9 @@ def run_checks(
                     reason=f"VIN {vin_str} failed ISO 3779 validation.",
                 ))
 
-    # 6. duplicate_photo
+    # 6. duplicate_photo & 7. photo_reused
     if photos is not None:
         findings.append(check_duplicate_photo(photos))
+        findings.append(check_photo_reused(photos, reused_photos))
 
     return findings

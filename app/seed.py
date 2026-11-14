@@ -25,7 +25,11 @@ def _create_claim_and_token(client: TestClient, form_data: dict[str, str]) -> tu
     if resp.status_code != 200:
         raise RuntimeError(f"Failed to create claim: {resp.status_code} {resp.text}")
 
-    match_link = re.search(r"/c/([a-zA-Z0-9_\-]+)", resp.text)
+    match_link = re.search(r'id="capture-url-input"[^>]*value="[^"]*/c/([a-zA-Z0-9_\-]+)"', resp.text)
+    if not match_link:
+        match_link = re.search(r'href="[^"]*/c/([a-zA-Z0-9_\-]+)"', resp.text)
+    if not match_link:
+        match_link = re.search(r"/c/([a-zA-Z0-9_\-]+)", resp.text)
     if not match_link:
         raise RuntimeError("Capture token not found in response")
     token = match_link.group(1)
@@ -61,19 +65,41 @@ def _upload_photos_and_submit(
 
 
 def seed() -> list[str]:
-    """Seed three demonstration claims with full flow finished."""
+    """Seed four demonstration claims with full flow finished."""
     init_db()
     load_or_create_key()
 
-    img_wide = make_jpeg("WIDE VIEW", (30, 60, 140))
-    img_damage = make_jpeg("DAMAGE CLOSEUP", (160, 40, 40))
-    img_plate = make_jpeg("LICENSE PLATE", (40, 120, 60))
-    img_vin = make_jpeg("VIN STICKER", (80, 80, 80))
-    images = {
-        "wide": img_wide,
-        "damage": img_damage,
-        "plate": img_plate,
-        "vin": img_vin,
+    # Claim (a) distinct images
+    img_a_damage = make_jpeg("DAMAGE CLOSEUP - CLAIM A", (160, 40, 40))
+    images_a = {
+        "wide": make_jpeg("WIDE VIEW - CLAIM A", (30, 60, 140)),
+        "damage": img_a_damage,
+        "plate": make_jpeg("LICENSE PLATE - CLAIM A", (40, 120, 60)),
+        "vin": make_jpeg("VIN STICKER - CLAIM A", (80, 80, 80)),
+    }
+
+    # Claim (b) distinct images
+    images_b = {
+        "wide": make_jpeg("WIDE VIEW - CLAIM B", (35, 65, 145)),
+        "damage": make_jpeg("DAMAGE CLOSEUP - CLAIM B", (165, 45, 45)),
+        "plate": make_jpeg("LICENSE PLATE - CLAIM B", (45, 125, 65)),
+        "vin": make_jpeg("VIN STICKER - CLAIM B", (85, 85, 85)),
+    }
+
+    # Claim (c) distinct images
+    images_c = {
+        "wide": make_jpeg("WIDE VIEW - CLAIM C", (25, 55, 135)),
+        "damage": make_jpeg("DAMAGE CLOSEUP - CLAIM C", (155, 35, 35)),
+        "plate": make_jpeg("LICENSE PLATE - CLAIM C", (35, 115, 55)),
+        "vin": make_jpeg("VIN STICKER - CLAIM C", (75, 75, 75)),
+    }
+
+    # Claim (d) "Reused photo": damage photo byte-identical to Claim (a)'s damage photo
+    images_d = {
+        "wide": make_jpeg("WIDE VIEW - CLAIM D", (50, 70, 150)),
+        "damage": img_a_damage,
+        "plate": make_jpeg("LICENSE PLATE - CLAIM D", (50, 130, 70)),
+        "vin": make_jpeg("VIN STICKER - CLAIM D", (90, 90, 90)),
     }
 
     created_claim_ids: list[str] = []
@@ -97,7 +123,7 @@ def seed() -> list[str]:
                 "claimed_damage_area": "rear",
             },
         )
-        _upload_photos_and_submit(client, token_a, images)
+        _upload_photos_and_submit(client, token_a, images_a)
         created_claim_ids.append(claim_a)
 
         # Case (b): "Wrong plate": plate reading 8ABC991 vs policy 7XYZ123 -> red
@@ -120,7 +146,7 @@ def seed() -> list[str]:
                 "claimed_damage_area": "rear",
             },
         )
-        _upload_photos_and_submit(client, token_b, images)
+        _upload_photos_and_submit(client, token_b, images_b)
         created_claim_ids.append(claim_b)
 
         # Case (c): "Wrong side": claimed rear, damage read as front -> amber
@@ -159,16 +185,37 @@ def seed() -> list[str]:
                 "claimed_damage_area": "rear",
             },
         )
-        _upload_photos_and_submit(client, token_c, images)
+        _upload_photos_and_submit(client, token_c, images_c)
         created_claim_ids.append(claim_c)
+
+        # Case (d): "Reused photo": damage photo byte-identical to Claim (a)'s damage photo -> photo_reused red
+        provider_d = FakeProvider()
+        app_main.get_provider = lambda: provider_d
+
+        claim_d, token_d = _create_claim_and_token(
+            client,
+            {
+                "make": "Toyota",
+                "model": "Camry",
+                "color": "Blue",
+                "plate": "7XYZ123",
+                "state": "CA",
+                "claimant_name": "David Clark",
+                "claimant_statement": "Rear bumper damage from low-speed collision.",
+                "claimed_damage_area": "rear",
+            },
+        )
+        _upload_photos_and_submit(client, token_d, images_d)
+        created_claim_ids.append(claim_d)
 
         # Restore default provider factory
         app_main.get_provider = lambda: FakeProvider()
 
-    print("Demo seed complete. 3 ready claims created:")
+    print("Demo seed complete. 4 ready claims created:")
     print(f"1. Clean case (All Green): {created_claim_ids[0]} -> /console/claims/{created_claim_ids[0]}")
     print(f"2. Wrong plate (Red): {created_claim_ids[1]} -> /console/claims/{created_claim_ids[1]}")
     print(f"3. Wrong side (Amber): {created_claim_ids[2]} -> /console/claims/{created_claim_ids[2]}")
+    print(f"4. Reused photo (Red): {created_claim_ids[3]} -> /console/claims/{created_claim_ids[3]}")
 
     return created_claim_ids
 

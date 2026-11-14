@@ -170,6 +170,105 @@ def test_gemini_provider_no_model_returns_none(monkeypatch):
     assert provider.read("plate", b"\xff\xd8\xff\xe0") is None
 
 
+def test_gemini_provider_comma_separated_env(monkeypatch):
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.8-flash, gemini-3.5-flash")
+    provider = GeminiProvider(api_key="mock_key")
+    assert provider.models == ["gemini-3.8-flash", "gemini-3.5-flash"]
+    assert provider.model == "gemini-3.8-flash"
+
+
+class MockAPIError(Exception):
+    def __init__(self, code: int, message: str = "API Error"):
+        super().__init__(message)
+        self.code = code
+
+
+def test_gemini_provider_model_fallback_on_429():
+    provider = GeminiProvider(
+        api_key="mock_key", model="gemini-3.8-flash,gemini-3.5-flash"
+    )
+    mock_client = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.text = '{"plate_text": "7XYZ123", "state": "CA", "readable": true}'
+    mock_resp.parsed = None
+
+    # First model raises HTTP 429, second model succeeds
+    mock_client.models.generate_content.side_effect = [
+        MockAPIError(code=429, message="Resource exhausted / rate limit"),
+        mock_resp,
+    ]
+
+    with patch.object(provider, "_get_client", return_value=mock_client):
+        result = provider.read("plate", b"\xff\xd8\xff\xe0")
+
+    assert isinstance(result, PlateReading)
+    assert result.plate_text == "7XYZ123"
+    assert provider.last_model == "gemini-3.5-flash"
+    assert mock_client.models.generate_content.call_count == 2
+    # Verify first call used gemini-3.8-flash and second used gemini-3.5-flash
+    calls = mock_client.models.generate_content.call_args_list
+    assert calls[0].kwargs["model"] == "gemini-3.8-flash"
+    assert calls[1].kwargs["model"] == "gemini-3.5-flash"
+
+
+def test_gemini_provider_model_fallback_on_timeout():
+    provider = GeminiProvider(
+        api_key="mock_key", model="gemini-3.8-flash,gemini-3.5-flash"
+    )
+    mock_client = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.text = '{"plate_text": "7XYZ123", "state": "CA", "readable": true}'
+    mock_resp.parsed = None
+
+    # First model times out, second succeeds
+    mock_client.models.generate_content.side_effect = [
+        httpx.TimeoutException("Read timeout after 30s"),
+        mock_resp,
+    ]
+
+    with patch.object(provider, "_get_client", return_value=mock_client):
+        result = provider.read("plate", b"\xff\xd8\xff\xe0")
+
+    assert isinstance(result, PlateReading)
+    assert provider.last_model == "gemini-3.5-flash"
+    assert mock_client.models.generate_content.call_count == 2
+
+
+def test_gemini_provider_model_fallback_on_server_error_503():
+    provider = GeminiProvider(
+        api_key="mock_key", model="gemini-3.8-flash,gemini-3.5-flash"
+    )
+    mock_client = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.text = '{"plate_text": "7XYZ123", "state": "CA", "readable": true}'
+    mock_resp.parsed = None
+
+    mock_client.models.generate_content.side_effect = [
+        MockAPIError(code=503, message="Service Unavailable"),
+        mock_resp,
+    ]
+
+    with patch.object(provider, "_get_client", return_value=mock_client):
+        result = provider.read("plate", b"\xff\xd8\xff\xe0")
+
+    assert isinstance(result, PlateReading)
+    assert provider.last_model == "gemini-3.5-flash"
+
+
+def test_fake_provider_summary_wording_no_confirmed():
+    provider = FakeProvider()
+    findings = [
+        {"check": "plate_match", "status": "green", "reason": "Plate matches."},
+        {"check": "damage_location", "status": "amber", "reason": "Mismatch."},
+    ]
+    summary = provider.summarize(findings)
+    assert summary is not None
+    summary_text = " ".join(s["text"] for s in summary["sentences"])
+    assert "confirmed" not in summary_text.lower()
+    assert "Plate, vehicle and damage readings were compared with the policy." in summary_text
+    assert "Flagged items need adjuster review." in summary_text
+
+
 def test_slot_prompts_prefix():
     from witnessed.providers import SLOT_PROMPTS
     expected_prefix = (

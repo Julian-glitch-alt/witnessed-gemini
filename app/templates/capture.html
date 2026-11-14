@@ -32,6 +32,13 @@
     <div class="camera-viewport">
       <video id="camera-feed" autoplay playsinline muted></video>
       <img id="preview-img" alt="Captured Photo Preview">
+      <div id="slot-guide" class="slot-guide guide-wide">
+        <div class="guide-box"></div>
+        <div id="guide-hint" class="guide-hint">Align whole vehicle inside the frame</div>
+      </div>
+      <div id="reading-badge" class="reading-badge" style="display: none;">
+        <span>Reading…</span>
+      </div>
       <div id="camera-error" class="camera-error-message">
         <strong>Camera Unavailable</strong>
         <p style="margin-top: 0.5rem; font-size: 0.85rem;">
@@ -54,10 +61,10 @@
 
       <div id="preview-actions" style="display: none; gap: 0.5rem;">
         <button type="button" id="btn-retake" class="btn btn-outline" style="flex: 1; min-height: 46px; background: #1e293b; color: #ffffff; border-color: #334155;">
-          Retake Photo
+          Retake (3 left)
         </button>
         <button type="button" id="btn-next" class="btn btn-primary" style="flex: 1; min-height: 46px;">
-          Next Slot &rarr;
+          Use photo
         </button>
       </div>
 
@@ -72,10 +79,38 @@
 <script>
 const TOKEN = "{{ token }}";
 const SLOTS = [
-  { id: "wide", title: "Step 1 of 4: Whole Vehicle", desc: "Capture a wide shot showing the entire vehicle." },
-  { id: "damage", title: "Step 2 of 4: Close-up Damage", desc: "Capture a clear close-up of the vehicle damage." },
-  { id: "plate", title: "Step 3 of 4: License Plate", desc: "Capture a clear, readable photo of the vehicle license plate." },
-  { id: "vin", title: "Step 4 of 4: VIN Plate / Sticker", desc: "Capture a clear photo of the VIN sticker or dashboard plate." }
+  {
+    id: "wide",
+    tabLabel: "1. Wide",
+    title: "Step 1 of 4: Whole Vehicle",
+    desc: "Capture a wide shot showing the entire vehicle.",
+    guideClass: "guide-wide",
+    hint: "Align whole vehicle inside the frame"
+  },
+  {
+    id: "damage",
+    tabLabel: "2. Damage",
+    title: "Step 2 of 4: Close-up Damage",
+    desc: "Capture a clear close-up of the vehicle damage.",
+    guideClass: "guide-damage",
+    hint: "Center close-up on the damaged area"
+  },
+  {
+    id: "plate",
+    tabLabel: "3. Plate",
+    title: "Step 3 of 4: License Plate",
+    desc: "Capture a clear, readable photo of the vehicle license plate.",
+    guideClass: "guide-plate",
+    hint: "Center license plate in the rectangle"
+  },
+  {
+    id: "vin",
+    tabLabel: "4. VIN",
+    title: "Step 4 of 4: VIN Plate / Sticker",
+    desc: "Capture a clear photo of the VIN sticker or dashboard plate.",
+    guideClass: "guide-vin",
+    hint: "Center VIN barcode or digits in the box"
+  }
 ];
 
 let currentSlotIndex = 0;
@@ -95,6 +130,9 @@ let retakeCounts = {
 const video = document.getElementById("camera-feed");
 const canvas = document.getElementById("capture-canvas");
 const previewImg = document.getElementById("preview-img");
+const slotGuide = document.getElementById("slot-guide");
+const guideHint = document.getElementById("guide-hint");
+const readingBadge = document.getElementById("reading-badge");
 const cameraError = document.getElementById("camera-error");
 const btnCapture = document.getElementById("btn-capture");
 const btnRetake = document.getElementById("btn-retake");
@@ -120,6 +158,7 @@ async function initCamera() {
     await video.play();
   } catch (err) {
     video.style.display = "none";
+    slotGuide.style.display = "none";
     btnCapture.disabled = true;
     cameraError.style.display = "block";
   }
@@ -130,13 +169,19 @@ function updateSlotUI() {
   instructionTitle.textContent = slot.title;
   instructionDesc.textContent = slot.desc;
 
+  // Update guide overlay
+  slotGuide.className = "slot-guide " + slot.guideClass;
+  guideHint.textContent = slot.hint;
+
   SLOTS.forEach((s, idx) => {
     const el = document.getElementById("step-" + s.id);
     el.classList.remove("active");
     if (photos[s.id]) {
       el.classList.add("completed");
+      el.textContent = "✓ " + s.tabLabel;
     } else {
       el.classList.remove("completed");
+      el.textContent = s.tabLabel;
     }
     if (idx === currentSlotIndex) {
       el.classList.add("active");
@@ -149,6 +194,7 @@ function updateSlotUI() {
 
   if (slotPhoto) {
     video.style.display = "none";
+    slotGuide.style.display = "none";
     previewImg.src = "/photos/" + slotPhoto.sha256;
     previewImg.style.display = "block";
     btnCapture.style.display = "none";
@@ -162,9 +208,11 @@ function updateSlotUI() {
       btnRetake.disabled = false;
       btnRetake.textContent = "Retake (" + retakesLeft + " left)";
     }
+    btnNext.textContent = "Use photo";
   } else {
     previewImg.style.display = "none";
     video.style.display = "block";
+    slotGuide.style.display = "flex";
     btnCapture.style.display = "block";
     previewActions.style.display = "none";
     retakeInfo.style.display = "none";
@@ -184,7 +232,8 @@ btnCapture.addEventListener("click", async () => {
 
   canvas.toBlob(async (blob) => {
     btnCapture.disabled = true;
-    btnCapture.textContent = "Uploading...";
+    btnCapture.textContent = "Reading…";
+    readingBadge.style.display = "flex";
 
     try {
       const resp = await fetch("/c/" + TOKEN + "/photo/" + slot.id, {
@@ -192,6 +241,8 @@ btnCapture.addEventListener("click", async () => {
         headers: { "Content-Type": "image/jpeg" },
         body: blob
       });
+
+      readingBadge.style.display = "none";
 
       if (!resp.ok) {
         const errData = await resp.json().catch(() => ({}));
@@ -210,6 +261,7 @@ btnCapture.addEventListener("click", async () => {
       btnCapture.textContent = "Take Photo";
       updateSlotUI();
     } catch (e) {
+      readingBadge.style.display = "none";
       alert("Network error while uploading photo. Please try again.");
       btnCapture.disabled = false;
       btnCapture.textContent = "Take Photo";
@@ -225,6 +277,7 @@ btnRetake.addEventListener("click", () => {
 });
 
 btnNext.addEventListener("click", () => {
+  // "Use photo" moves to the next slot
   if (currentSlotIndex < SLOTS.length - 1) {
     currentSlotIndex++;
   } else {

@@ -95,10 +95,13 @@ class FakeProvider:
         self,
         canned_readings: dict[str, Any] | None = None,
         canned_summaries: list[Any] | None = None,
+        model: str | None = None,
     ):
         self.canned_readings: dict[str, Any] = dict(canned_readings) if canned_readings else {}
         self.canned_summaries: list[Any] = list(canned_summaries) if canned_summaries is not None else []
         self.summary_calls: list[dict[str, Any]] = []
+        self.model = model or "fake"
+        self.last_model = self.model
 
     def set_reading(self, slot: str, reading: Any) -> None:
         self.canned_readings[slot] = reading
@@ -123,12 +126,12 @@ class FakeProvider:
         sentences = []
         if green_checks:
             sentences.append({
-                "text": "Automated checks confirmed matching vehicle and policy details.",
+                "text": "Plate, vehicle and damage readings were compared with the policy.",
                 "cites": green_checks[:2] if len(green_checks) >= 2 else green_checks,
             })
         if issue_checks:
             sentences.append({
-                "text": "Potential discrepancies were flagged for adjuster evaluation.",
+                "text": "Flagged items need adjuster review.",
                 "cites": issue_checks[:2] if len(issue_checks) >= 2 else issue_checks,
             })
         if not sentences and checks:
@@ -168,9 +171,41 @@ class FakeProvider:
         return None
 
     def read(self, slot: str, image_bytes: bytes) -> Any:
+        self.last_model = self.model
         if slot in self.canned_readings:
             return self.canned_readings[slot]
         return self.get_default_reading(slot)
+
+
+def _is_fallback_error(err: Exception) -> bool:
+    if isinstance(err, (httpx.TimeoutException, TimeoutError)):
+        return True
+    code = getattr(err, "code", None) or getattr(err, "status_code", None)
+    if code in (429, 500, 503, 504):
+        return True
+    try:
+        from google.genai import errors
+        if isinstance(err, errors.APIError) and getattr(err, "code", None) in (429, 500, 503, 504):
+            return True
+    except ImportError:
+        pass
+    err_str = str(err).lower()
+    for s in ("429", "500", "503", "504", "timeout", "timed out"):
+        if s in err_str:
+            return True
+    return False
+
+
+def _is_transport_error(err: Exception) -> bool:
+    if isinstance(err, (ConnectionError, TimeoutError, httpx.TransportError)):
+        return True
+    try:
+        from google.genai.errors import ServerError
+        if isinstance(err, ServerError):
+            return True
+    except ImportError:
+        pass
+    return False
 
 
 class GeminiProvider:
@@ -178,7 +213,16 @@ class GeminiProvider:
 
     def __init__(self, api_key: str | None = None, model: str | None = None):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
-        self.model = model or os.environ.get("GEMINI_MODEL")
+        model_val = model or os.environ.get("GEMINI_MODEL")
+        if model_val:
+            if isinstance(model_val, list):
+                self.models = [str(m).strip() for m in model_val if str(m).strip()]
+            else:
+                self.models = [m.strip() for m in str(model_val).split(",") if m.strip()]
+        else:
+            self.models = []
+        self.model = self.models[0] if self.models else None
+        self.last_model = None
         self._client = None
 
     def _get_client(self):
@@ -186,7 +230,16 @@ class GeminiProvider:
             if not self.api_key:
                 raise ValueError("GEMINI_API_KEY is not set.")
             from google import genai
-            self._client = genai.Client(api_key=self.api_key)
+            try:
+                from google.genai import types
+                http_options = types.HttpOptions(timeout=30000)
+            except Exception:
+                http_options = None
+
+            if http_options is not None:
+                self._client = genai.Client(api_key=self.api_key, http_options=http_options)
+            else:
+                self._client = genai.Client(api_key=self.api_key)
         return self._client
 
     def read(self, slot: str, image_bytes: bytes) -> Any:
@@ -195,7 +248,7 @@ class GeminiProvider:
         if not schema_cls or not prompt:
             return None
 
-        if not self.model or not str(self.model).strip():
+        if not self.models:
             return None
         if not self.api_key and not os.environ.get("GEMINI_API_KEY"):
             return None
@@ -206,61 +259,72 @@ class GeminiProvider:
 
         try:
             from google.genai import types
-            from google.genai.errors import ServerError
-            transport_errors = (
-                ConnectionError,
-                TimeoutError,
-                httpx.TransportError,
-                ServerError,
-            )
         except ImportError:
-            transport_errors = (
-                ConnectionError,
-                TimeoutError,
-                httpx.TransportError,
-            )
+            types = None
 
         client = self._get_client()
-        response = None
 
-        for attempt in range(2):
-            try:
-                response = client.models.generate_content(
-                    model=self.model,
-                    contents=[
-                        types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+        for m_idx, current_model in enumerate(self.models):
+            has_next = m_idx < len(self.models) - 1
+            response = None
+
+            for attempt in range(2):
+                try:
+                    contents = [
+                        types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+                        if types
+                        else image_bytes,
                         prompt,
-                    ],
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=schema_cls,
-                    ),
-                )
-                break
-            except transport_errors:
-                if attempt == 0:
-                    continue
-                return None
+                    ]
+                    config = (
+                        types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema=schema_cls,
+                        )
+                        if types
+                        else None
+                    )
+                    kwargs = {"model": current_model, "contents": contents}
+                    if config:
+                        kwargs["config"] = config
+
+                    response = client.models.generate_content(**kwargs)
+                    break
+                except Exception as err:
+                    if _is_fallback_error(err):
+                        if has_next:
+                            response = None
+                            break
+                        if attempt == 0:
+                            continue
+                        return None
+                    elif _is_transport_error(err):
+                        if attempt == 0:
+                            continue
+                        return None
+                    else:
+                        return None
+
+            if response is None:
+                continue
+
+            try:
+                if getattr(response, "parsed", None) is not None and isinstance(response.parsed, schema_cls):
+                    self.last_model = current_model
+                    return response.parsed
+                if getattr(response, "text", None):
+                    parsed = schema_cls.model_validate_json(response.text)
+                    self.last_model = current_model
+                    return parsed
             except Exception:
                 return None
-
-        if response is None:
-            return None
-
-        try:
-            if getattr(response, "parsed", None) is not None and isinstance(response.parsed, schema_cls):
-                return response.parsed
-            if getattr(response, "text", None):
-                return schema_cls.model_validate_json(response.text)
-        except Exception:
-            return None
 
         return None
 
     def summarize(
         self, findings_data: list[dict[str, Any]], retry_prompt: str | None = None
     ) -> dict | None:
-        if not self.model or not str(self.model).strip():
+        if not self.models:
             return None
         if not self.api_key and not os.environ.get("GEMINI_API_KEY"):
             return None
@@ -278,54 +342,61 @@ class GeminiProvider:
 
         try:
             from google.genai import types
-            from google.genai.errors import ServerError
-            transport_errors = (
-                ConnectionError,
-                TimeoutError,
-                httpx.TransportError,
-                ServerError,
-            )
         except ImportError:
-            transport_errors = (
-                ConnectionError,
-                TimeoutError,
-                httpx.TransportError,
-            )
+            types = None
 
         client = self._get_client()
-        response = None
 
-        for attempt in range(2):
+        for m_idx, current_model in enumerate(self.models):
+            has_next = m_idx < len(self.models) - 1
+            response = None
+
+            for attempt in range(2):
+                try:
+                    config = (
+                        types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema=SummaryResult,
+                        )
+                        if types
+                        else None
+                    )
+                    kwargs = {"model": current_model, "contents": prompt}
+                    if config:
+                        kwargs["config"] = config
+
+                    response = client.models.generate_content(**kwargs)
+                    break
+                except Exception as err:
+                    if _is_fallback_error(err):
+                        if has_next:
+                            response = None
+                            break
+                        if attempt == 0:
+                            continue
+                        return None
+                    elif _is_transport_error(err):
+                        if attempt == 0:
+                            continue
+                        return None
+                    else:
+                        return None
+
+            if response is None:
+                continue
+
             try:
-                response = client.models.generate_content(
-                    model=self.model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=SummaryResult,
-                    ),
-                )
-                break
-            except transport_errors:
-                if attempt == 0:
-                    continue
-                return None
+                if getattr(response, "parsed", None) is not None:
+                    parsed = response.parsed
+                    if isinstance(parsed, SummaryResult):
+                        self.last_model = current_model
+                        return parsed.model_dump()
+                if getattr(response, "text", None):
+                    validated = SummaryResult.model_validate_json(response.text)
+                    self.last_model = current_model
+                    return validated.model_dump()
             except Exception:
                 return None
-
-        if response is None:
-            return None
-
-        try:
-            if getattr(response, "parsed", None) is not None:
-                parsed = response.parsed
-                if isinstance(parsed, SummaryResult):
-                    return parsed.model_dump()
-            if getattr(response, "text", None):
-                validated = SummaryResult.model_validate_json(response.text)
-                return validated.model_dump()
-        except Exception:
-            return None
 
         return None
 

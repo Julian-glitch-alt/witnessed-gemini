@@ -157,7 +157,8 @@ def test_report_page_shows_ai_summary_when_valid(monkeypatch):
             },
         )
         import re
-        token = re.search(r"/c/([a-zA-Z0-9_\-]+)", resp.text).group(1)
+        match_link = re.search(r'id="capture-url-input"[^>]*value="[^"]*/c/([a-zA-Z0-9_\-]+)"', resp.text)
+        token = match_link.group(1) if match_link else re.search(r"/c/([a-zA-Z0-9_\-]+)", resp.text).group(1)
         claim_id = re.search(r"CLM-[A-F0-9]+", resp.text).group(0)
 
         for slot in ("wide", "damage", "plate", "vin"):
@@ -203,7 +204,8 @@ def test_report_page_omits_ai_summary_when_summarize_fails(monkeypatch):
             },
         )
         import re
-        token = re.search(r"/c/([a-zA-Z0-9_\-]+)", resp.text).group(1)
+        match_link = re.search(r'id="capture-url-input"[^>]*value="[^"]*/c/([a-zA-Z0-9_\-]+)"', resp.text)
+        token = match_link.group(1) if match_link else re.search(r"/c/([a-zA-Z0-9_\-]+)", resp.text).group(1)
         claim_id = re.search(r"CLM-[A-F0-9]+", resp.text).group(0)
 
         for slot in ("wide", "damage", "plate", "vin"):

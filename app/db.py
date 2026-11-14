@@ -65,6 +65,7 @@ def init_db() -> None:
             path TEXT NOT NULL,
             reading_json TEXT,
             status TEXT NOT NULL,
+            model TEXT,
             created_at TEXT NOT NULL
         );
 
@@ -86,6 +87,10 @@ def init_db() -> None:
         """)
         try:
             conn.execute("ALTER TABLE claims ADD COLUMN ai_summary TEXT;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE photos ADD COLUMN model TEXT;")
         except Exception:
             pass
     conn.close()

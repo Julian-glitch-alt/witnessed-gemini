@@ -206,6 +206,7 @@ async def capture_page(request: Request, token: str):
             existing_photos[row["slot"]] = {
                 "sha256": row["sha256"],
                 "status": row["status"],
+                "model": row["model"] if "model" in row.keys() else None,
             }
 
     retake_counts = json.loads(session["retake_counts"] or "{}")
@@ -275,6 +276,9 @@ async def upload_photo(request: Request, token: str, slot: str):
         else (json.dumps(reading) if reading else None)
     )
     status = "read" if reading is not None else "unchecked"
+    model_used = getattr(provider, "last_model", None) or (
+        "fake" if isinstance(provider, FakeProvider) else "gemini"
+    )
     now_iso = datetime.now(timezone.utc).isoformat()
 
     new_total = prior_uploads + 1
@@ -286,8 +290,8 @@ async def upload_photo(request: Request, token: str, slot: str):
         conn.execute(
             """
             INSERT INTO photos (
-                session_token, slot, sha256, path, reading_json, status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                session_token, slot, sha256, path, reading_json, status, model, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 token,
@@ -296,6 +300,7 @@ async def upload_photo(request: Request, token: str, slot: str):
                 str(photo_path),
                 reading_json,
                 status,
+                model_used,
                 now_iso,
             ),
         )
@@ -310,6 +315,7 @@ async def upload_photo(request: Request, token: str, slot: str):
         "slot": slot,
         "sha256": sha256,
         "status": status,
+        "model": model_used,
         "retakes_left": retakes_left,
     }
 
@@ -377,7 +383,26 @@ async def submit_capture(request: Request, token: str):
         claimed_damage_area=claim["claimed_damage_area"],
     )
 
-    findings = run_checks(policy, readings, photos=photo_hashes)
+    reused_photos: dict[str, str] = {}
+    if photo_hashes:
+        placeholders = ",".join("?" for _ in photo_hashes)
+        params = list(photo_hashes.values()) + [claim["id"]]
+        reused_rows = conn.execute(
+            f"""
+            SELECT photos.sha256, sessions.claim_id
+            FROM photos
+            JOIN sessions ON photos.session_token = sessions.token
+            WHERE photos.sha256 IN ({placeholders})
+              AND sessions.claim_id != ?
+            ORDER BY photos.id ASC
+            """,
+            params,
+        ).fetchall()
+        for r_row in reused_rows:
+            if r_row["sha256"] not in reused_photos:
+                reused_photos[r_row["sha256"]] = r_row["claim_id"]
+
+    findings = run_checks(policy, readings, photos=photo_hashes, reused_photos=reused_photos)
     now_iso = datetime.now(timezone.utc).isoformat()
 
     package_data = {
@@ -397,7 +422,14 @@ async def submit_capture(request: Request, token: str):
             "state": claim["state"],
         },
         "readings": {
-            slot: (r.model_dump() if r and hasattr(r, "model_dump") else r)
+            slot: {
+                "model": (
+                    latest_photos[slot]["model"]
+                    if "model" in latest_photos[slot].keys() and latest_photos[slot]["model"]
+                    else "fake"
+                ),
+                "reading": (r.model_dump() if r and hasattr(r, "model_dump") else r),
+            }
             for slot, r in readings.items()
         },
         "session_code": session["session_code"],
@@ -490,13 +522,21 @@ async def claim_report(request: Request, id: str):
             if row["slot"] not in photos:
                 photos[row["slot"]] = row
 
-    findings = conn.execute(
+    findings_rows = conn.execute(
         "SELECT * FROM findings WHERE claim_id = ?", (id,)
     ).fetchall()
     decisions = conn.execute(
         "SELECT * FROM decisions WHERE claim_id = ? ORDER BY timestamp DESC", (id,)
     ).fetchall()
     conn.close()
+
+    status_order = {"red": 0, "amber": 1, "unchecked": 2, "green": 3}
+    findings = sorted(
+        findings_rows,
+        key=lambda f: status_order.get(
+            f["status"] if hasattr(f, "__getitem__") else getattr(f, "status", ""), 99
+        ),
+    )
 
     summary_line = build_findings_summary(findings)
     is_valid_seal = None

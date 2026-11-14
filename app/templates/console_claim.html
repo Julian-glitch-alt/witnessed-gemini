@@ -3,6 +3,7 @@
 {% block title %}Claim {{ claim.id }} - Witnessed{% endblock %}
 
 {% block content %}
+<!-- 1. Header (claim id, status, session) -->
 <div style="margin-bottom: 1.5rem;">
   <a href="/console" style="color: var(--text-muted); text-decoration: none; font-size: 0.9rem;">&larr; Back to Claims</a>
   <div class="claim-header-row">
@@ -31,7 +32,7 @@
   </div>
 </div>
 
-<!-- Summary Line -->
+<!-- 2. Code summary -->
 <div class="card" style="background: var(--bg-card); border-left: 4px solid var(--primary); padding: 1rem 1.25rem;">
   <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.25rem;">
     Evidence Summary (Deterministic Rule Engine)
@@ -41,8 +42,8 @@
   </div>
 </div>
 
+<!-- 3. AI summary -->
 {% if ai_summary and ai_summary.sentences %}
-<!-- AI Summary -->
 <div class="card" style="background: var(--bg-card); border-left: 4px solid #4f46e5; padding: 1rem 1.25rem;">
   <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.5rem;">
     AI summary (checked against findings)
@@ -60,44 +61,74 @@
 </div>
 {% endif %}
 
-<!-- Digital Seal Status -->
-<div class="card" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.25rem;">
-  <div>
-    <strong>Digital Seal & Authenticity</strong>
-    <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;">
-      {% if is_valid_seal is true %}
-        <span class="pill pill-green">Sealed</span>
-        <span style="margin-left: 0.5rem;">Sealed. Ed25519 signature is valid: this package has not changed since the server received it.</span>
-        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.35rem;">
-          The seal shows the package was not altered after receipt. It does not prove what the camera saw.
-        </div>
-      {% elif is_valid_seal is false %}
-        <span class="pill pill-red">Signature Mismatch</span>
-        <span style="margin-left: 0.5rem;">Warning: package data or signature has been tampered with!</span>
+<!-- 4. Findings table -->
+<div class="card" style="padding: 0; overflow-x: auto;">
+  <div style="padding: 1.25rem 1.5rem 0.5rem;">
+    <h2>Automated Findings</h2>
+    <p class="subtitle" style="margin-bottom: 0.5rem;">Pure code rules comparing policy data with structured AI photo readings</p>
+  </div>
+  <table class="data-table findings-table">
+    <thead>
+      <tr>
+        <th style="width: 200px;">Check</th>
+        <th style="width: 140px;">Status</th>
+        <th>Reasoning & Observation</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for finding in findings %}
+      <tr class="findings-row-{{ finding.status }}">
+        <td class="findings-td-check">
+          <div class="findings-mobile-header">
+            <span class="findings-check-name">{{ finding.check_name }}</span>
+            <span class="findings-mobile-pill">
+              {% if finding.status == 'green' %}
+                <span class="pill pill-green">Match</span>
+              {% elif finding.status == 'amber' %}
+                <span class="pill pill-amber">Review</span>
+              {% elif finding.status == 'red' %}
+                <span class="pill pill-red">Mismatch</span>
+              {% else %}
+                <span class="pill pill-gray">Unchecked</span>
+              {% endif %}
+            </span>
+          </div>
+        </td>
+        <td class="findings-td-status">
+          {% if finding.status == 'green' %}
+            <span class="pill pill-green">Match</span>
+          {% elif finding.status == 'amber' %}
+            <span class="pill pill-amber">Review</span>
+          {% elif finding.status == 'red' %}
+            <span class="pill pill-red">Mismatch</span>
+          {% else %}
+            <span class="pill pill-gray">Unchecked</span>
+          {% endif %}
+        </td>
+        <td class="findings-td-reason">
+          {{ finding.reason }}
+        </td>
+      </tr>
       {% else %}
-        <span class="pill pill-gray">Unsealed</span>
-        <span style="margin-left: 0.5rem;">Photos not yet submitted or sealed.</span>
-      {% endif %}
-    </div>
-  </div>
-  {% if claim.package_bytes %}
-  <div>
-    <a href="/console/claims/{{ claim.id }}/package" class="btn btn-outline" download>
-      Download Sealed Package (.json) &darr;
-    </a>
-  </div>
-  {% endif %}
+      <tr>
+        <td colspan="3" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+          No findings generated yet. Evidence submission is pending.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
 
-<!-- Evidence Photos -->
+<!-- 5. Evidence photos -->
 <div class="card">
   <h2>Evidence Photos</h2>
-  <p class="subtitle" style="margin-bottom: 1rem;">Captured in the live camera flow, session {{ session.session_code if session else "N/A" }}</p>
+  <p class="subtitle" style="margin-bottom: 1rem;">Captured in the live camera flow, session {{ session.session_code if session else "N/A" }} &bull; Click any thumbnail to inspect details</p>
   <div class="photo-grid">
     {% set slots = ['wide', 'damage', 'plate', 'vin'] %}
     {% for slot in slots %}
       {% set photo = photos.get(slot) %}
-      <div class="photo-card">
+      <div class="photo-card" {% if photo %}style="cursor: pointer;" onclick="openPhotoModal('{{ slot }}', '{{ photo.sha256 }}', '{{ (photo.model if 'model' in photo.keys() else 'fake') or 'fake' }}', {{ (photo.reading_json if photo.reading_json else '{}') | tojson }})"{% endif %}>
         <div class="photo-card-header">
           <span style="text-transform: uppercase;">{{ slot }}</span>
           {% if photo %}
@@ -124,53 +155,36 @@
   </div>
 </div>
 
-<!-- Automated Findings -->
-<div class="card" style="padding: 0; overflow-x: auto;">
-  <div style="padding: 1.25rem 1.5rem 0.5rem;">
-    <h2>Automated Findings</h2>
-    <p class="subtitle" style="margin-bottom: 0.5rem;">Pure code rules comparing policy data with structured AI photo readings</p>
-  </div>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th style="width: 200px;">Check</th>
-        <th style="width: 140px;">Status</th>
-        <th>Reasoning & Observation</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for finding in findings %}
-      <tr class="findings-row-{{ finding.status }}">
-        <td style="font-weight: 600; font-family: monospace; font-size: 0.95rem;">
-          {{ finding.check_name }}
-        </td>
-        <td>
-          {% if finding.status == 'green' %}
-            <span class="pill pill-green">Match</span>
-          {% elif finding.status == 'amber' %}
-            <span class="pill pill-amber">Review</span>
-          {% elif finding.status == 'red' %}
-            <span class="pill pill-red">Mismatch</span>
-          {% else %}
-            <span class="pill pill-gray">Unchecked</span>
-          {% endif %}
-        </td>
-        <td style="font-size: 0.92rem;">
-          {{ finding.reason }}
-        </td>
-      </tr>
+<!-- 6. Seal box -->
+<div class="card seal-card">
+  <div class="seal-text">
+    <strong>Digital Seal & Authenticity</strong>
+    <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;">
+      {% if is_valid_seal is true %}
+        <span class="pill pill-green">Sealed</span>
+        <span style="margin-left: 0.5rem;">Sealed. Ed25519 signature is valid: this package has not changed since the server received it.</span>
+        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.35rem;">
+          The seal shows the package was not altered after receipt. It does not prove what the camera saw.
+        </div>
+      {% elif is_valid_seal is false %}
+        <span class="pill pill-red">Signature Mismatch</span>
+        <span style="margin-left: 0.5rem;">Warning: package data or signature has been tampered with!</span>
       {% else %}
-      <tr>
-        <td colspan="3" style="text-align: center; padding: 2rem; color: var(--text-muted);">
-          No findings generated yet. Evidence submission is pending.
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+        <span class="pill pill-gray">Unsealed</span>
+        <span style="margin-left: 0.5rem;">Photos not yet submitted or sealed.</span>
+      {% endif %}
+    </div>
+  </div>
+  {% if claim.package_bytes %}
+  <div class="seal-action">
+    <a href="/console/claims/{{ claim.id }}/package" class="btn btn-outline" download>
+      Download Sealed Package (.json) &darr;
+    </a>
+  </div>
+  {% endif %}
 </div>
 
-<!-- Claimant & Policy Summary -->
+<!-- 7. Claim & policy context -->
 <div class="card">
   <h2>Claim & Policy Context</h2>
   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem;">
@@ -193,7 +207,7 @@
   </div>
 </div>
 
-<!-- Adjuster Decision Panel -->
+<!-- 8. Adjuster decision -->
 <div class="card" style="border: 2px solid var(--border);">
   <h2>Adjuster Decision</h2>
   <p class="subtitle" style="margin-bottom: 1rem;">
@@ -234,4 +248,63 @@
   </div>
   {% endif %}
 </div>
+
+<!-- Photo Details Overlay Modal -->
+<div id="photo-overlay" class="photo-overlay" style="display: none;">
+  <div class="photo-overlay-backdrop" onclick="closePhotoModal()"></div>
+  <div class="photo-overlay-content">
+    <button type="button" class="photo-overlay-close" onclick="closePhotoModal()">&times;</button>
+    <div class="photo-overlay-body">
+      <div class="photo-overlay-img-container">
+        <img id="overlay-img" src="" alt="Full size evidence photo">
+      </div>
+      <div class="photo-overlay-details">
+        <h3 id="overlay-slot" style="margin-bottom: 0.5rem; color: var(--text-main);"></h3>
+        <div style="font-size: 0.85rem; margin-bottom: 0.4rem;">
+          <strong>SHA-256:</strong> <span id="overlay-sha" style="font-family: monospace; word-break: break-all; color: var(--text-muted);"></span>
+        </div>
+        <div style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+          <strong>Model Used:</strong> <span id="overlay-model" class="pill pill-gray" style="font-family: monospace; text-transform: none;"></span>
+        </div>
+        <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.25rem;">Raw Reading JSON:</div>
+        <pre class="overlay-json-pre"><code id="overlay-json"></code></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function openPhotoModal(slot, sha256, model, rawJson) {
+  if (!sha256) return;
+  document.getElementById('overlay-img').src = '/photos/' + sha256;
+  document.getElementById('overlay-slot').textContent = 'Slot: ' + slot.toUpperCase();
+  document.getElementById('overlay-sha').textContent = sha256;
+  document.getElementById('overlay-model').textContent = model || 'N/A';
+
+  let formatted = '';
+  try {
+    const obj = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
+    formatted = JSON.stringify(obj, null, 2);
+  } catch (e) {
+    formatted = String(rawJson || '');
+  }
+  document.getElementById('overlay-json').textContent = formatted || '{}';
+  document.getElementById('photo-overlay').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closePhotoModal() {
+  const overlay = document.getElementById('photo-overlay');
+  if (overlay) {
+    overlay.style.display = 'none';
+    document.body.style.overflow = '';
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closePhotoModal();
+  }
+});
+</script>
 {% endblock %}

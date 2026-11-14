@@ -319,3 +319,33 @@ def test_duplicate_photo_plate_and_vin_duplicate_is_amber(clean_policy, clean_re
     assert f_map["duplicate_photo"].reason == "The same image was submitted for slots plate and vin."
 
 
+def test_photo_reused_no_prior_claims_is_green(clean_policy, clean_readings):
+    photos = {
+        "wide": "hash_111",
+        "damage": "hash_222",
+        "plate": "hash_333",
+        "vin": "hash_444",
+    }
+    findings = run_checks(clean_policy, clean_readings, photos=photos, reused_photos={})
+    f_map = _finding_map(findings)
+    assert "photo_reused" in f_map
+    assert f_map["photo_reused"].status == "green"
+    assert "no submitted photos appear" in f_map["photo_reused"].reason.lower()
+
+
+def test_photo_reused_matching_other_claim_is_red(clean_policy, clean_readings):
+    photos = {
+        "wide": "hash_111",
+        "damage": "shared_hash_999",
+        "plate": "hash_333",
+        "vin": "hash_444",
+    }
+    reused = {"shared_hash_999": "CLM-PRIOR01"}
+    findings = run_checks(clean_policy, clean_readings, photos=photos, reused_photos=reused)
+    f_map = _finding_map(findings)
+    assert "photo_reused" in f_map
+    assert f_map["photo_reused"].status == "red"
+    assert f_map["photo_reused"].reason == "This exact image was already submitted in claim CLM-PRIOR01."
+
+
+
