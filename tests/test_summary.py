@@ -9,6 +9,11 @@ from witnessed.schemas import Finding, SummaryResult
 from witnessed.summary import summarize
 
 
+SAMPLE_SIG = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
 @pytest.fixture
 def sample_findings():
     return [
@@ -163,7 +168,24 @@ def test_report_page_shows_ai_summary_when_valid(monkeypatch):
 
         for slot in ("wide", "damage", "plate", "vin"):
             client.post(f"/c/{token}/photo/{slot}", content=tiny_jpeg, headers={"Content-Type": "image/jpeg"})
-        client.post(f"/c/{token}/submit")
+        ans = {
+            "incident_type": "Crash with another vehicle",
+            "date": "2026-10-27",
+            "statement": "Hit rear.",
+            "parts": ["Rear bumper"],
+            "drivable": "Yes",
+        }
+        client.post(f"/c/{token}/answers", json=ans)
+        client.post(
+            f"/c/{token}/submit",
+            json={
+                "signer_name": "Jane",
+                "confirmed": True,
+                "signature": SAMPLE_SIG,
+                "answers": ans,
+            },
+            headers={"Accept": "application/json"},
+        )
 
         report_resp = client.get(f"/console/claims/{claim_id}")
         assert report_resp.status_code == 200
@@ -210,7 +232,24 @@ def test_report_page_omits_ai_summary_when_summarize_fails(monkeypatch):
 
         for slot in ("wide", "damage", "plate", "vin"):
             client.post(f"/c/{token}/photo/{slot}", content=tiny_jpeg, headers={"Content-Type": "image/jpeg"})
-        client.post(f"/c/{token}/submit")
+        ans = {
+            "incident_type": "Crash with another vehicle",
+            "date": "2026-10-27",
+            "statement": "Hit rear.",
+            "parts": ["Rear bumper"],
+            "drivable": "Yes",
+        }
+        client.post(f"/c/{token}/answers", json=ans)
+        client.post(
+            f"/c/{token}/submit",
+            json={
+                "signer_name": "Jane",
+                "confirmed": True,
+                "signature": SAMPLE_SIG,
+                "answers": ans,
+            },
+            headers={"Accept": "application/json"},
+        )
 
         report_resp = client.get(f"/console/claims/{claim_id}")
         assert report_resp.status_code == 200

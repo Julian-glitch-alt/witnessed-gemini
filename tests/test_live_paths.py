@@ -188,8 +188,24 @@ def _execute_full_flow(
         assert data.get("model") == provider.model
 
     # 3. Submit
+    ans = {
+        "incident_type": "Crash with another vehicle",
+        "date": "2026-10-27",
+        "statement": "Rear-ended damage.",
+        "parts": ["Rear bumper"],
+        "drivable": "Yes",
+    }
+    client.post(f"/c/{token}/answers", json=ans)
+
+    sample_sig = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
     submit_resp = client.post(
         f"/c/{token}/submit",
+        json={
+            "signer_name": "Jane Doe",
+            "confirmed": True,
+            "signature": sample_sig,
+            "answers": ans,
+        },
         headers={"Accept": "application/json"},
     )
     assert submit_resp.status_code == 200, f"Submit must return 200, got {submit_resp.status_code}"

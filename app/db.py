@@ -45,7 +45,11 @@ def init_db() -> None:
             created_at TEXT NOT NULL,
             package_bytes BLOB,
             signature TEXT,
-            ai_summary TEXT
+            ai_summary TEXT,
+            answers_json TEXT,
+            signer_name TEXT,
+            signature_image TEXT,
+            signed_at TEXT
         );
 
         CREATE TABLE IF NOT EXISTS sessions (
@@ -95,6 +99,22 @@ def init_db() -> None:
             pass
         try:
             conn.execute("ALTER TABLE findings ADD COLUMN adjuster_label TEXT;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE claims ADD COLUMN answers_json TEXT;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE claims ADD COLUMN signer_name TEXT;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE claims ADD COLUMN signature_image TEXT;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE claims ADD COLUMN signed_at TEXT;")
         except Exception:
             pass
     conn.close()

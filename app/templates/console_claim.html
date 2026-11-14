@@ -45,16 +45,36 @@
         <table class="paper-table">
           <tbody>
             <tr>
+              <td class="paper-lbl">Incident type</td>
+              <td class="paper-val">{{ answers.incident_type or "N/A" }}</td>
+            </tr>
+            <tr>
               <td class="paper-lbl">Date of the loss</td>
-              <td class="paper-val">{{ claim.created_at[:10] }}</td>
+              <td class="paper-val">{{ answers.date or claim.created_at[:10] }}</td>
             </tr>
             <tr>
-              <td class="paper-lbl">Describe what happened</td>
-              <td class="paper-val">"{{ claim.claimant_statement }}"</td>
+              <td class="paper-lbl">Time</td>
+              <td class="paper-val">{{ answers.time or "N/A" }}</td>
             </tr>
             <tr>
-              <td class="paper-lbl">Which areas are damaged?</td>
-              <td class="paper-val" style="text-transform: capitalize;">{{ claim.claimed_damage_area }}</td>
+              <td class="paper-lbl">Place</td>
+              <td class="paper-val">{{ answers.place or "N/A" }}</td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">City & State</td>
+              <td class="paper-val">{{ answers.city or "N/A" }}, {{ answers.state or claim.state }}</td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">In claimant's own words</td>
+              <td class="paper-val">"{{ answers.statement or claim.claimant_statement }}"</td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">Was another vehicle involved?</td>
+              <td class="paper-val">{{ answers.other_vehicle or "N/A" }}</td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">Were police contacted?</td>
+              <td class="paper-val">{{ answers.police or "N/A" }}</td>
             </tr>
           </tbody>
         </table>
@@ -83,13 +103,40 @@
                 {{ vin_as_read or "Pending / Unread" }}
               </td>
             </tr>
+            <tr>
+              <td class="paper-lbl">Can you drive it?</td>
+              <td class="paper-val">{{ answers.drivable or "N/A" }}</td>
+            </tr>
           </tbody>
         </table>
       </section>
 
-      <!-- Section 3. Photos -->
+      <!-- Section 3. Damage -->
       <section class="paper-section">
-        <h2 class="paper-section-heading">3. Photos</h2>
+        <h2 class="paper-section-heading">3. Damage</h2>
+        <table class="paper-table">
+          <tbody>
+            <tr>
+              <td class="paper-lbl">Damaged parts</td>
+              <td class="paper-val">
+                {% if answers.parts %}
+                  {{ answers.parts | join(", ") }}
+                {% else %}
+                  {{ claim.claimed_damage_area | capitalize }}
+                {% endif %}
+              </td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">Other parts / notes</td>
+              <td class="paper-val">{{ answers.other_parts_note or "None" }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Section 4. Photos -->
+      <section class="paper-section">
+        <h2 class="paper-section-heading">4. Photos</h2>
         <div style="font-size: 0.76rem; color: var(--mute); font-style: italic; margin-bottom: 8px;">
           Captured in the live camera flow, session {{ session.session_code if session else "N/A" }} &bull; Click to enlarge
         </div>
@@ -171,6 +218,39 @@
             </figcaption>
           </figure>
         </div>
+      </section>
+
+      <!-- Section 5. Declaration -->
+      <section class="paper-section">
+        <h2 class="paper-section-heading">5. Declaration</h2>
+        <table class="paper-table">
+          <tbody>
+            <tr>
+              <td class="paper-lbl">Confirmation</td>
+              <td class="paper-val">I confirm the information in this claim is true to the best of my knowledge.</td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">Signer name</td>
+              <td class="paper-val"><strong>{{ claim.signer_name or claim.claimant_name }}</strong></td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">Signature</td>
+              <td class="paper-val">
+                {% if claim.signature_image %}
+                  <div style="background: #ffffff; border: 1px solid var(--line); border-radius: 8px; padding: 6px; display: inline-block;">
+                    <img src="{{ claim.signature_image }}" alt="Claimant signature" class="declaration-signature-img" style="max-height: 70px; display: block;">
+                  </div>
+                {% else %}
+                  <span style="color: var(--mute); font-style: italic;">No signature recorded</span>
+                {% endif %}
+              </td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">Signed at</td>
+              <td class="paper-val">{{ claim.signed_at or claim.created_at }}</td>
+            </tr>
+          </tbody>
+        </table>
       </section>
 
       <!-- Paper Footer & Digital Seal -->

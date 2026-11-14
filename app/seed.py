@@ -42,11 +42,34 @@ def _create_claim_and_token(client: TestClient, form_data: dict[str, str]) -> tu
     return claim_id, token
 
 
+SAMPLE_SIG = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
 def _upload_photos_and_submit(
     client: TestClient,
     token: str,
     images: dict[str, bytes],
+    answers: dict[str, Any] | None = None,
+    signer_name: str = "Jane Doe",
 ) -> None:
+    ans = answers or {
+        "incident_type": "Crash with another vehicle",
+        "date": "2026-10-27",
+        "time": "14:30",
+        "place": "Main St",
+        "city": "San Jose",
+        "state": "CA",
+        "statement": "I was rear-ended at a red light; rear bumper crushed.",
+        "other_vehicle": "Yes",
+        "police": "Yes",
+        "drivable": "Yes",
+        "parts": ["Rear bumper"],
+        "other_parts_note": "",
+    }
+    client.post(f"/c/{token}/answers", json=ans)
+
     for slot in ("wide", "damage", "plate", "vin"):
         resp = client.post(
             f"/c/{token}/photo/{slot}",
@@ -58,6 +81,12 @@ def _upload_photos_and_submit(
 
     submit_resp = client.post(
         f"/c/{token}/submit",
+        json={
+            "signer_name": signer_name,
+            "confirmed": True,
+            "signature": SAMPLE_SIG,
+            "answers": ans,
+        },
         headers={"Accept": "application/json"},
     )
     if submit_resp.status_code != 200:

@@ -36,6 +36,61 @@ def _normalize_area(val: str | None) -> str | None:
     return cleaned
 
 
+def map_parts_to_claimed_area(parts: list[str]) -> str:
+    front_parts = {
+        "front bumper",
+        "hood",
+        "front left",
+        "front right",
+        "windshield",
+    }
+    rear_parts = {
+        "rear bumper",
+        "trunk or tailgate",
+        "trunk",
+        "tailgate",
+        "rear left",
+        "rear right",
+        "rear window",
+    }
+    left_parts = {
+        "left side",
+    }
+    right_parts = {
+        "right side",
+    }
+
+    counts = {"front": 0, "rear": 0, "left": 0, "right": 0}
+    for p in parts:
+        cleaned = str(p).strip().lower()
+        if cleaned in front_parts:
+            counts["front"] += 1
+        elif cleaned in rear_parts:
+            counts["rear"] += 1
+        elif cleaned in left_parts:
+            counts["left"] += 1
+        elif cleaned in right_parts:
+            counts["right"] += 1
+        else:
+            if any(fp in cleaned for fp in ("front", "hood", "windshield")):
+                counts["front"] += 1
+            elif any(rp in cleaned for rp in ("rear", "trunk", "tailgate")):
+                counts["rear"] += 1
+            elif "left" in cleaned:
+                counts["left"] += 1
+            elif "right" in cleaned:
+                counts["right"] += 1
+
+    best_area = "rear"
+    best_count = 0
+    for area in ("front", "rear", "left", "right"):
+        if counts[area] > best_count:
+            best_count = counts[area]
+            best_area = area
+
+    return best_area
+
+
 COLOR_FAMILIES: dict[str, list[str]] = {
     "blue": ["blue", "navy", "azure", "cobalt", "indigo", "teal", "cyan"],
     "gray": ["gray", "grey", "silver", "charcoal", "gunmetal", "slate", "pewter"],

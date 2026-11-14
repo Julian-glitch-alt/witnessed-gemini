@@ -3,43 +3,572 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Witnessed Evidence Capture - {{ session_code }}</title>
+  <title>Witnessed Evidence - Demo Mutual Insurance Claim {{ claim.id }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
-<body class="capture-body">
+<body class="capture-flow-body">
 
-  <div class="fixed-session-banner">
-    <div>Witnessed Evidence</div>
-    <div>Session: <span class="session-pill">{{ session_code }}</span></div>
+  <!-- Header -->
+  <header class="flow-header" id="flow-header">
+    <div class="flow-header-inner">
+      <div class="flow-header-top">
+        <div class="flow-brand-left">
+          <div class="flow-logo-d">D</div>
+          <div class="flow-brand-name">Demo Mutual Insurance</div>
+        </div>
+        <div class="flow-claim-id-mono">{{ claim.id }}</div>
+      </div>
+      <div class="flow-progress-track">
+        <div id="progress-bar-fill" class="flow-progress-fill" style="width: 12.5%;"></div>
+      </div>
+      <div id="step-subline" class="flow-step-subline">Step 1 of 8: What happened to your car?</div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flow-container">
+
+    <!-- STEP 0: What happened to your car? -->
+    <section id="step-0" class="flow-step" style="display: block;">
+      <h1 class="step-title">What happened to your car?</h1>
+      <p class="step-subtitle">Pick the closest answer. You can explain the details next.</p>
+
+      <div class="picker-group-label">Crash</div>
+
+      <div class="picker-card" onclick="selectIncidentType(this, 'Crash with another vehicle')">
+        <div class="picker-icon-box">🚗</div>
+        <div class="picker-card-info">
+          <div class="picker-card-title">Crash with another vehicle</div>
+          <div class="picker-card-desc">The other driver stopped and shared their details.</div>
+        </div>
+      </div>
+
+      <div class="picker-card" onclick="selectIncidentType(this, 'Hit and run')">
+        <div class="picker-icon-box">🚙</div>
+        <div class="picker-card-info">
+          <div class="picker-card-title">Hit and run</div>
+          <div class="picker-card-desc">Another vehicle hit yours and drove off, while you were driving or parked.</div>
+        </div>
+      </div>
+
+      <div class="picker-card" onclick="selectIncidentType(this, 'Single-car accident')">
+        <div class="picker-icon-box">🚧</div>
+        <div class="picker-card-info">
+          <div class="picker-card-title">Single-car accident</div>
+          <div class="picker-card-desc">You hit a pole, a wall, road debris or a pothole, or left the road.</div>
+        </div>
+      </div>
+
+      <div class="picker-card" onclick="selectIncidentType(this, 'Hit an animal')">
+        <div class="picker-icon-box">🐾</div>
+        <div class="picker-card-info">
+          <div class="picker-card-title">Hit an animal</div>
+          <div class="picker-card-desc">A deer or another animal.</div>
+        </div>
+      </div>
+
+      <div class="picker-group-label">Damage while parked</div>
+
+      <div class="picker-card" onclick="selectIncidentType(this, 'Vandalism or break-in')">
+        <div class="picker-icon-box">🛑</div>
+        <div class="picker-card-info">
+          <div class="picker-card-title">Vandalism or break-in</div>
+          <div class="picker-card-desc">Keyed, windows broken, tires slashed or broken into.</div>
+        </div>
+      </div>
+
+      <div class="picker-card" onclick="selectIncidentType(this, 'Glass only')">
+        <div class="picker-icon-box">🪟</div>
+        <div class="picker-card-info">
+          <div class="picker-card-title">Glass only</div>
+          <div class="picker-card-desc">A chip or crack in the windshield or a window, nothing else damaged.</div>
+        </div>
+      </div>
+
+      <div class="picker-card" onclick="selectIncidentType(this, 'Hail, flood or fallen tree')">
+        <div class="picker-icon-box">🌧️</div>
+        <div class="picker-card-info">
+          <div class="picker-card-title">Hail, flood or fallen tree</div>
+          <div class="picker-card-desc">Weather or nature damaged the car.</div>
+        </div>
+      </div>
+
+      <div class="picker-card" onclick="selectIncidentType(this, 'Parts stolen')">
+        <div class="picker-icon-box">🔧</div>
+        <div class="picker-card-info">
+          <div class="picker-card-title">Parts stolen</div>
+          <div class="picker-card-desc">A catalytic converter, wheels or another part was taken.</div>
+        </div>
+      </div>
+
+      <div class="picker-card" onclick="selectIncidentType(this, 'Fire')">
+        <div class="picker-icon-box">🔥</div>
+        <div class="picker-card-info">
+          <div class="picker-card-title">Fire</div>
+          <div class="picker-card-desc">The car caught fire or was burned.</div>
+        </div>
+      </div>
+
+      <div class="picker-group-label">Something else</div>
+
+      <div class="picker-card" onclick="selectIncidentType(this, 'Something else')">
+        <div class="picker-icon-box">❓</div>
+        <div class="picker-card-info">
+          <div class="picker-card-title">Something else</div>
+          <div class="picker-card-desc">Someone was hurt, or none of the above. An adjuster will call you.</div>
+        </div>
+      </div>
+
+      <p style="font-size: 14px; color: #64748b; line-height: 1.45; margin-top: 24px;">
+        Your answers save as you go. You can close this page and come back with the same link.
+      </p>
+    </section>
+
+    <!-- STEP 1: When and where -->
+    <section id="step-1" class="flow-step" style="display: none;">
+      <h1 class="step-title">When and where</h1>
+
+      <div class="form-group-lg">
+        <label for="input-date" class="form-label-lg">What day did it happen?</label>
+        <input type="date" id="input-date" class="form-input-lg" required onchange="validateStep1()">
+      </div>
+
+      <div class="form-group-lg">
+        <label for="input-time" class="form-label-lg">About what time? <span style="font-weight: 400; color: #64748b;">(optional)</span></label>
+        <input type="time" id="input-time" class="form-input-lg">
+      </div>
+
+      <div class="form-group-lg">
+        <label for="input-place" class="form-label-lg">Where did it happen? <span style="font-weight: 400; color: #64748b;">(optional)</span></label>
+        <div class="form-hint" style="margin-bottom: 6px;">A street, an intersection or the name of a place.</div>
+        <input type="text" id="input-place" class="form-input-lg" placeholder="e.g. Main St and 4th Ave">
+      </div>
+
+      <div class="form-group-lg">
+        <label for="input-city" class="form-label-lg">City</label>
+        <input type="text" id="input-city" class="form-input-lg" placeholder="City" value="{{ existing_answers.city or '' }}">
+      </div>
+
+      <div class="form-group-lg">
+        <label for="input-state" class="form-label-lg">State</label>
+        <input type="text" id="input-state" class="form-input-lg" maxlength="2" placeholder="CA" value="{{ existing_answers.state or claim.state }}">
+        <div class="form-hint">From your policy. Change it if this happened in another state.</div>
+      </div>
+    </section>
+
+    <!-- STEP 2: What happened -->
+    <section id="step-2" class="flow-step" style="display: none;">
+      <h1 class="step-title">What happened</h1>
+
+      <div class="form-group-lg">
+        <label for="input-statement" class="form-label-lg">Describe what happened in your own words</label>
+        <textarea id="input-statement" class="form-textarea-lg" rows="4" placeholder="Tell us what happened..." oninput="validateStep2()">{{ existing_answers.statement or claim.claimant_statement or '' }}</textarea>
+        <div id="statement-hint" class="form-hint">Minimum 10 characters.</div>
+      </div>
+
+      <div class="form-group-lg">
+        <label class="form-label-lg">Was another vehicle involved?</label>
+        <div class="chips-row" id="chips-other-vehicle">
+          <button type="button" class="chip-btn" data-value="Yes" onclick="selectChip('other-vehicle', 'Yes')">Yes</button>
+          <button type="button" class="chip-btn" data-value="No" onclick="selectChip('other-vehicle', 'No')">No</button>
+        </div>
+      </div>
+
+      <div class="form-group-lg">
+        <label class="form-label-lg">Were the police contacted?</label>
+        <div class="chips-row" id="chips-police">
+          <button type="button" class="chip-btn" data-value="Yes" onclick="selectChip('police', 'Yes')">Yes</button>
+          <button type="button" class="chip-btn" data-value="No" onclick="selectChip('police', 'No')">No</button>
+          <button type="button" class="chip-btn" data-value="Not yet" onclick="selectChip('police', 'Not yet')">Not yet</button>
+        </div>
+      </div>
+
+      <div class="form-group-lg">
+        <label class="form-label-lg">Can you drive the car?</label>
+        <div class="chips-row" id="chips-drivable">
+          <button type="button" class="chip-btn" data-value="Yes" onclick="selectChip('drivable', 'Yes')">Yes</button>
+          <button type="button" class="chip-btn" data-value="No" onclick="selectChip('drivable', 'No')">No</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 3: Where is the damage? -->
+    <section id="step-3" class="flow-step" style="display: none;">
+      <h1 class="step-title">Where is the damage?</h1>
+      <p class="step-subtitle">Tap each damaged part. Left means the driver's side. Front left is the front corner on the driver's side.</p>
+
+      <!-- Inline Car Outline SVG -->
+      <div class="car-svg-container">
+        <svg id="car-svg" viewBox="0 0 320 440" width="280" height="385" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="blueprint-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+              <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e0f2fe" stroke-width="0.75"/>
+            </pattern>
+          </defs>
+
+          <!-- Grid Background -->
+          <rect x="0" y="0" width="320" height="440" fill="url(#blueprint-grid)" rx="10"/>
+
+          <!-- Direction Labels -->
+          <text x="160" y="24" text-anchor="middle" font-size="10" font-weight="700" fill="#64748b" letter-spacing="1">FRONT</text>
+          <text x="24" y="220" text-anchor="middle" font-size="9" font-weight="600" fill="#64748b" transform="rotate(-90 24 220)">Driver's side (left)</text>
+          <text x="296" y="220" text-anchor="middle" font-size="9" font-weight="600" fill="#64748b" transform="rotate(90 296 220)">Passenger side (right)</text>
+
+          <!-- Tires (tap for Wheels or tires) -->
+          <rect x="74" y="85" width="16" height="42" rx="6" fill="#1e293b" class="car-zone" data-part="Wheels or tires" onclick="togglePart('Wheels or tires')"/>
+          <rect x="230" y="85" width="16" height="42" rx="6" fill="#1e293b" class="car-zone" data-part="Wheels or tires" onclick="togglePart('Wheels or tires')"/>
+          <rect x="74" y="305" width="16" height="42" rx="6" fill="#1e293b" class="car-zone" data-part="Wheels or tires" onclick="togglePart('Wheels or tires')"/>
+          <rect x="230" y="305" width="16" height="42" rx="6" fill="#1e293b" class="car-zone" data-part="Wheels or tires" onclick="togglePart('Wheels or tires')"/>
+
+          <!-- Side mirrors -->
+          <ellipse cx="78" cy="148" rx="8" ry="5" fill="#ffffff" stroke="#0f6b52" stroke-width="2"/>
+          <ellipse cx="242" cy="148" rx="8" ry="5" fill="#ffffff" stroke="#0f6b52" stroke-width="2"/>
+
+          <!-- Car Body Zones -->
+          <!-- Front bumper -->
+          <path d="M 105 48 Q 160 36 215 48 Q 215 62 205 66 Q 160 56 115 66 Z" fill="#ffffff" stroke="#0f6b52" stroke-width="2" class="car-zone" data-part="Front bumper" onclick="togglePart('Front bumper')"/>
+
+          <!-- Front left -->
+          <path d="M 105 48 L 115 66 L 98 128 L 84 120 Q 82 70 105 48 Z" fill="#ffffff" stroke="#0f6b52" stroke-width="2" class="car-zone" data-part="Front left" onclick="togglePart('Front left')"/>
+
+          <!-- Front right -->
+          <path d="M 215 48 Q 238 70 236 120 L 222 128 L 205 66 L 215 48 Z" fill="#ffffff" stroke="#0f6b52" stroke-width="2" class="car-zone" data-part="Front right" onclick="togglePart('Front right')"/>
+
+          <!-- Hood -->
+          <path d="M 115 66 Q 160 56 205 66 L 202 128 L 118 128 Z" fill="#ffffff" stroke="#0f6b52" stroke-width="2" class="car-zone" data-part="Hood" onclick="togglePart('Hood')"/>
+
+          <!-- Windshield -->
+          <path d="M 102 132 L 218 132 L 208 178 L 112 178 Z" fill="#ffffff" stroke="#0f6b52" stroke-width="2" class="car-zone" data-part="Windshield" onclick="togglePart('Windshield')"/>
+
+          <!-- Left side -->
+          <path d="M 98 132 L 112 178 L 112 268 L 98 305 L 84 295 L 84 140 Z" fill="#ffffff" stroke="#0f6b52" stroke-width="2" class="car-zone" data-part="Left side" onclick="togglePart('Left side')"/>
+
+          <!-- Right side -->
+          <path d="M 222 132 L 236 140 L 236 295 L 222 305 L 208 268 L 208 178 L 218 132 Z" fill="#ffffff" stroke="#0f6b52" stroke-width="2" class="car-zone" data-part="Right side" onclick="togglePart('Right side')"/>
+
+          <!-- Roof -->
+          <path d="M 112 178 L 208 178 L 206 268 L 114 268 Z" fill="#ffffff" stroke="#0f6b52" stroke-width="2" class="car-zone" data-part="Roof" onclick="togglePart('Roof')"/>
+
+          <!-- Rear window -->
+          <path d="M 114 268 L 206 268 L 214 312 L 106 312 Z" fill="#ffffff" stroke="#0f6b52" stroke-width="2" class="car-zone" data-part="Rear window" onclick="togglePart('Rear window')"/>
+
+          <!-- Trunk or tailgate -->
+          <path d="M 106 312 L 214 312 L 210 368 L 110 368 Z" fill="#ffffff" stroke="#0f6b52" stroke-width="2" class="car-zone" data-part="Trunk or tailgate" onclick="togglePart('Trunk or tailgate')"/>
+
+          <!-- Rear left -->
+          <path d="M 98 305 L 106 312 L 110 368 L 96 384 Q 84 370 84 320 Z" fill="#ffffff" stroke="#0f6b52" stroke-width="2" class="car-zone" data-part="Rear left" onclick="togglePart('Rear left')"/>
+
+          <!-- Rear right -->
+          <path d="M 222 305 Q 236 320 236 370 L 224 384 L 210 368 L 214 312 Z" fill="#ffffff" stroke="#0f6b52" stroke-width="2" class="car-zone" data-part="Rear right" onclick="togglePart('Rear right')"/>
+
+          <!-- Rear bumper -->
+          <path d="M 96 384 L 110 368 Q 160 380 210 368 L 224 384 Q 160 404 96 384 Z" fill="#ffffff" stroke="#0f6b52" stroke-width="2" class="car-zone" data-part="Rear bumper" onclick="togglePart('Rear bumper')"/>
+        </svg>
+      </div>
+
+      <!-- Part Chips Grid -->
+      <div class="parts-chips-grid">
+        <button type="button" class="part-chip" data-part="Front bumper" onclick="togglePart('Front bumper')">Front bumper</button>
+        <button type="button" class="part-chip" data-part="Hood" onclick="togglePart('Hood')">Hood</button>
+        <button type="button" class="part-chip" data-part="Front left" onclick="togglePart('Front left')">Front left</button>
+        <button type="button" class="part-chip" data-part="Front right" onclick="togglePart('Front right')">Front right</button>
+        <button type="button" class="part-chip" data-part="Left side" onclick="togglePart('Left side')">Left side</button>
+        <button type="button" class="part-chip" data-part="Right side" onclick="togglePart('Right side')">Right side</button>
+        <button type="button" class="part-chip" data-part="Rear left" onclick="togglePart('Rear left')">Rear left</button>
+        <button type="button" class="part-chip" data-part="Rear right" onclick="togglePart('Rear right')">Rear right</button>
+        <button type="button" class="part-chip" data-part="Rear bumper" onclick="togglePart('Rear bumper')">Rear bumper</button>
+        <button type="button" class="part-chip" data-part="Trunk or tailgate" onclick="togglePart('Trunk or tailgate')">Trunk or tailgate</button>
+        <button type="button" class="part-chip" data-part="Roof" onclick="togglePart('Roof')">Roof</button>
+        <button type="button" class="part-chip" data-part="Windshield" onclick="togglePart('Windshield')">Windshield</button>
+        <button type="button" class="part-chip" data-part="Rear window" onclick="togglePart('Rear window')">Rear window</button>
+        <button type="button" class="part-chip" data-part="Wheels or tires" onclick="togglePart('Wheels or tires')">Wheels or tires</button>
+        <button type="button" class="part-chip" data-part="Inside the car" onclick="togglePart('Inside the car')">Inside the car</button>
+        <button type="button" class="part-chip" data-part="Underneath" onclick="togglePart('Underneath')">Underneath</button>
+      </div>
+
+      <div class="form-group-lg" style="margin-top: 18px;">
+        <label for="input-other-parts" class="form-label-lg">Another part, or anything we missed <span style="font-weight: 400; color: #64748b;">(optional)</span></label>
+        <div class="form-hint" style="margin-bottom: 6px;">If a part is not on the car picture, say where the damage is.</div>
+        <textarea id="input-other-parts" class="form-textarea-lg" rows="3" placeholder="Optional notes..."></textarea>
+      </div>
+    </section>
+
+    <!-- STEP 4: Photos -->
+    <section id="step-4" class="flow-step" style="display: none;">
+      <h1 class="step-title">Photos</h1>
+      <p class="step-subtitle">Take each one live with this phone.</p>
+
+      <div class="session-code-pill-banner">
+        <span class="session-code-pill-green">Session {{ session_code }}</span>
+        <span>appears on every photo</span>
+      </div>
+
+      <div class="photos-progress-header">
+        <span id="photos-progress-label">0 of 4 done</span>
+      </div>
+      <div class="photos-progress-track">
+        <div id="photos-progress-bar" class="photos-progress-fill" style="width: 0%;"></div>
+      </div>
+
+      <!-- Photo Cards in Exact Order: 1 plate, 2 vin, 3 damage, 4 wide -->
+      <!-- 1 License plate -->
+      <div class="photo-card" id="card-slot-plate">
+        <div class="photo-card-top">
+          <div class="photo-num-badge" id="badge-slot-plate">1</div>
+          <div class="photo-card-info">
+            <div class="photo-card-title-row">
+              <span class="photo-card-title">License plate</span>
+              <span class="photo-tag-req">Required</span>
+            </div>
+            <div class="photo-card-hint">Photograph the license plate so every character is readable.</div>
+          </div>
+        </div>
+
+        <div id="action-slot-plate">
+          <button type="button" class="btn-take-photo-green" onclick="openCamera('plate')">
+            📷 Take photo
+          </button>
+        </div>
+      </div>
+
+      <!-- 2 VIN plate -->
+      <div class="photo-card" id="card-slot-vin">
+        <div class="photo-card-top">
+          <div class="photo-num-badge" id="badge-slot-vin">2</div>
+          <div class="photo-card-info">
+            <div class="photo-card-title-row">
+              <span class="photo-card-title">VIN plate</span>
+              <span class="photo-tag-req">Required</span>
+            </div>
+            <div class="photo-card-hint">Photograph the VIN at the bottom of the windshield or on the driver's door frame.</div>
+          </div>
+        </div>
+
+        <div id="action-slot-vin">
+          <button type="button" class="btn-take-photo-green" onclick="openCamera('vin')">
+            📷 Take photo
+          </button>
+        </div>
+      </div>
+
+      <!-- 3 Damage close-up -->
+      <div class="photo-card" id="card-slot-damage">
+        <div class="photo-card-top">
+          <div class="photo-num-badge" id="badge-slot-damage">3</div>
+          <div class="photo-card-info">
+            <div class="photo-card-title-row">
+              <span class="photo-card-title">Damage close-up</span>
+              <span class="photo-tag-req">Required</span>
+            </div>
+            <div class="photo-card-hint">Get close to the damage. Put a coin next to it for scale.</div>
+          </div>
+        </div>
+
+        <div id="action-slot-damage">
+          <button type="button" class="btn-take-photo-green" onclick="openCamera('damage')">
+            📷 Take photo
+          </button>
+        </div>
+      </div>
+
+      <!-- 4 The whole vehicle -->
+      <div class="photo-card" id="card-slot-wide">
+        <div class="photo-card-top">
+          <div class="photo-num-badge" id="badge-slot-wide">4</div>
+          <div class="photo-card-info">
+            <div class="photo-card-title-row">
+              <span class="photo-card-title">The whole vehicle</span>
+              <span class="photo-tag-req">Required</span>
+            </div>
+            <div class="photo-card-hint">Step back so the whole vehicle is in the photo.</div>
+          </div>
+        </div>
+
+        <div id="action-slot-wide">
+          <button type="button" class="btn-take-photo-green" onclick="openCamera('wide')">
+            📷 Take photo
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 5: Check -->
+    <section id="step-5" class="flow-step" style="display: none;">
+      <h1 class="step-title">Check</h1>
+      <p class="step-subtitle">What we checked so far, and your claim as it will be sent.</p>
+
+      <div class="check-items-stack" id="check-checklist">
+        <!-- Checklist items populated dynamically -->
+      </div>
+
+      <!-- Review Card 1: What happened -->
+      <div class="review-card-panel">
+        <div class="review-card-top-row">
+          <div class="review-card-title-text">What happened</div>
+          <button type="button" class="review-card-edit-btn" onclick="jumpToStep(1)">Edit</button>
+        </div>
+        <table class="review-details-table">
+          <tr>
+            <td class="review-details-lbl">What day did it happen?</td>
+            <td class="review-details-val" id="rev-date">-</td>
+          </tr>
+          <tr>
+            <td class="review-details-lbl">City, State</td>
+            <td class="review-details-val" id="rev-location">-</td>
+          </tr>
+          <tr>
+            <td class="review-details-lbl">In your own words</td>
+            <td class="review-details-val" id="rev-statement">-</td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Review Card 2: Your vehicle -->
+      <div class="review-card-panel">
+        <div class="review-card-top-row">
+          <div class="review-card-title-text">Your vehicle</div>
+          <button type="button" class="review-card-edit-btn" onclick="jumpToStep(2)">Edit</button>
+        </div>
+        <table class="review-details-table">
+          <tr>
+            <td class="review-details-lbl">Vehicle</td>
+            <td class="review-details-val">{{ claim.color }} {{ claim.make }} {{ claim.model }}</td>
+          </tr>
+          <tr>
+            <td class="review-details-lbl">Plate</td>
+            <td class="review-details-val">{{ claim.plate }} ({{ claim.state }})</td>
+          </tr>
+          <tr>
+            <td class="review-details-lbl">Can you drive it?</td>
+            <td class="review-details-val" id="rev-drivable">-</td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Review Card 3: Damage -->
+      <div class="review-card-panel">
+        <div class="review-card-top-row">
+          <div class="review-card-title-text">Damage</div>
+          <button type="button" class="review-card-edit-btn" onclick="jumpToStep(3)">Edit</button>
+        </div>
+        <table class="review-details-table">
+          <tr>
+            <td class="review-details-lbl">Where is your car damaged?</td>
+            <td class="review-details-val" id="rev-parts">-</td>
+          </tr>
+          <tr>
+            <td class="review-details-lbl">Other notes</td>
+            <td class="review-details-val" id="rev-other-parts">None</td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Review Card 4: Photos -->
+      <div class="review-card-panel">
+        <div class="review-card-top-row">
+          <div class="review-card-title-text">Photos</div>
+          <button type="button" class="review-card-edit-btn" onclick="jumpToStep(4)">Edit</button>
+        </div>
+        <div class="review-thumbs-row" id="rev-photos-grid">
+          <!-- 4 thumbnails rendered dynamically -->
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 6: Sign and send -->
+    <section id="step-6" class="flow-step" style="display: none;">
+      <h1 class="step-title">Sign and send</h1>
+
+      <div class="fraud-alert-banner">
+        <div class="fraud-alert-body">
+          Any person who knowingly presents a false or fraudulent claim for the payment of a loss is guilty of a crime and may be subject to fines and confinement in state prison.
+        </div>
+        <div class="fraud-alert-sub">State fraud warning (demo wording)</div>
+      </div>
+
+      <div class="form-group-lg">
+        <label for="input-signer-name" class="form-label-lg">Your full name</label>
+        <input type="text" id="input-signer-name" class="form-input-lg" value="{{ claim.signer_name or claim.claimant_name or '' }}" oninput="validateStep6()">
+        <div class="form-hint">From your policy. Change it if someone else is signing.</div>
+      </div>
+
+      <label class="confirm-box-label">
+        <input type="checkbox" id="checkbox-confirm" class="confirm-checkbox-native" onchange="validateStep6()">
+        <span class="confirm-text">I confirm the information in this claim is true to the best of my knowledge.</span>
+      </label>
+
+      <div class="signature-card">
+        <div class="review-card-top-row">
+          <div>
+            <div class="review-card-title-text">Your signature</div>
+            <div class="form-hint" style="margin-top: 2px;">Sign with your finger or a stylus.</div>
+          </div>
+          <button type="button" class="btn-clear-sig" onclick="clearSignature()">Clear</button>
+        </div>
+
+        <div class="signature-canvas-wrap">
+          <canvas id="signature-canvas" width="400" height="160"></canvas>
+        </div>
+        <div id="sig-status-msg" style="font-size: 13px; color: #64748b;">Before sending: Your signature</div>
+      </div>
+    </section>
+
+    <!-- STEP 7: Claim sent -->
+    <section id="step-7" class="flow-step" style="display: none;">
+      <div class="done-page-wrap">
+        <div class="done-check-circle">✓</div>
+        <h1 class="done-heading">Claim sent</h1>
+
+        <div class="done-claim-card">
+          <div class="done-claim-label">Claim number</div>
+          <div class="done-claim-number">{{ claim.id }}</div>
+        </div>
+
+        <p class="done-explainer-text">
+          Demo Mutual Insurance has received claim {{ claim.id }} with your photos and answers, sealed as they arrived. You can close this page.
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Bottom Action Bar (Fixed at bottom) -->
+  <div class="flow-bottom-bar" id="flow-bottom-bar">
+    <div class="flow-bottom-row">
+      <button type="button" id="btn-back" class="btn-step-back" onclick="goBack()" style="display: none;">‹</button>
+      <button type="button" id="btn-continue" class="btn-step-continue" onclick="goNext()">Continue</button>
+    </div>
+    <div class="flow-secure-note">
+      <span>🔒</span>
+      <span>Secure link from Demo Mutual Insurance. Photos are sealed when they arrive.</span>
+    </div>
   </div>
 
-  <div class="capture-container">
-    <!-- Progress Indicator -->
-    <div class="slot-progress-bar">
-      <div id="step-wide" class="slot-step active">1. Wide</div>
-      <div id="step-damage" class="slot-step">2. Damage</div>
-      <div id="step-plate" class="slot-step">3. Plate</div>
-      <div id="step-vin" class="slot-step">4. VIN</div>
+  <!-- Fullscreen Live Camera Modal (getUserMedia) -->
+  <div id="camera-modal" class="camera-modal-overlay">
+    <div class="camera-modal-header">
+      <div style="font-weight: 700; font-size: 16px;" id="camera-modal-title">Live Camera</div>
+      <button type="button" class="camera-modal-close" onclick="closeCamera()">&times;</button>
     </div>
 
-    <!-- Active Instruction -->
-    <div id="slot-instruction" class="slot-instruction">
-      <strong id="instruction-title">Step 1 of 4: Whole Vehicle</strong>
-      <div id="instruction-desc">Capture a wide shot showing the entire vehicle.</div>
-    </div>
+    <div class="camera-modal-viewport">
+      <video id="camera-feed" class="camera-modal-video" autoplay playsinline muted></video>
+      <img id="camera-preview-img" class="camera-modal-preview-img" alt="Captured preview">
 
-    <!-- Live Viewport / Preview -->
-    <div class="camera-viewport">
-      <video id="camera-feed" autoplay playsinline muted></video>
-      <img id="preview-img" alt="Captured Photo Preview">
-      <div id="slot-guide" class="slot-guide guide-wide">
+      <!-- Guides overlay with exact classes for compatibility -->
+      <div id="slot-guide" class="slot-guide guide-plate">
         <div class="guide-box"></div>
-        <div id="guide-hint" class="guide-hint">Align whole vehicle inside the frame</div>
+        <div id="guide-hint" class="guide-hint">Center license plate in the rectangle</div>
       </div>
+
       <div id="reading-badge" class="reading-badge" style="display: none;">
         <span>Reading…</span>
       </div>
-      <div id="camera-error" class="camera-error-message">
+
+      <div id="camera-error-box" class="camera-error-message" style="position: absolute; z-index: 30; background: rgba(0,0,0,0.85); border-radius: 12px; margin: 20px;">
         <strong>Camera Unavailable</strong>
         <p style="margin-top: 0.5rem; font-size: 0.85rem;">
           A live camera is strictly required to capture photo evidence for this claim. Please enable camera access in your browser permissions and refresh the page.
@@ -47,30 +576,18 @@
       </div>
     </div>
 
+    <!-- Hidden canvas for capture & watermarking -->
     <canvas id="capture-canvas" style="display: none;"></canvas>
 
-    <!-- Controls -->
-    <div class="capture-controls">
-      <div id="retake-info" style="font-size: 0.82rem; text-align: center; color: #94a3b8; display: none;">
-        Retakes remaining for this slot: <span id="retake-count" style="font-weight: 700; color: #ffffff;">3</span>
-      </div>
+    <div class="camera-modal-controls">
+      <button type="button" id="btn-shutter" class="btn-shutter-round" onclick="snapPhoto()" title="Take photo"></button>
 
-      <button type="button" id="btn-capture" class="btn-capture">
-        &#128247; Take Photo
-      </button>
-
-      <div id="preview-actions" style="display: none; gap: 0.5rem;">
-        <button type="button" id="btn-retake" class="btn btn-outline" style="flex: 1; min-height: 46px; background: #1e293b; color: #ffffff; border-color: #334155;">
+      <div id="camera-preview-actions" class="camera-preview-actions">
+        <button type="button" id="btn-cam-retake" class="btn-clear-sig" style="flex: 1; height: 50px; font-size: 15px; color: #ffffff; background: #1e293b; border-color: #475569;" onclick="retakePhotoInCamera()">
           Retake (3 left)
         </button>
-        <button type="button" id="btn-next" class="btn btn-primary" style="flex: 1; min-height: 46px;">
+        <button type="button" id="btn-cam-use" class="btn-step-continue" style="flex: 1; min-height: 50px; font-size: 16px;" onclick="usePhotoFromCamera()">
           Use photo
-        </button>
-      </div>
-
-      <div style="margin-top: 0.5rem;">
-        <button type="button" id="btn-submit" class="btn-submit-photos" disabled>
-          Submit All 4 Photos
         </button>
       </div>
     </div>
@@ -78,274 +595,742 @@
 
 <script>
 const TOKEN = "{{ token }}";
-const SLOTS = [
-  {
-    id: "wide",
-    tabLabel: "1. Wide",
-    title: "Step 1 of 4: Whole Vehicle",
-    desc: "Capture a wide shot showing the entire vehicle.",
-    guideClass: "guide-wide",
-    hint: "Align whole vehicle inside the frame"
-  },
-  {
-    id: "damage",
-    tabLabel: "2. Damage",
-    title: "Step 2 of 4: Close-up Damage",
-    desc: "Capture a clear close-up of the vehicle damage.",
-    guideClass: "guide-damage",
-    hint: "Center close-up on the damaged area"
-  },
-  {
-    id: "plate",
-    tabLabel: "3. Plate",
-    title: "Step 3 of 4: License Plate",
-    desc: "Capture a clear, readable photo of the vehicle license plate.",
-    guideClass: "guide-plate",
-    hint: "Center license plate in the rectangle"
-  },
-  {
-    id: "vin",
-    tabLabel: "4. VIN",
-    title: "Step 4 of 4: VIN Plate / Sticker",
-    desc: "Capture a clear photo of the VIN sticker or dashboard plate.",
-    guideClass: "guide-vin",
-    hint: "Center VIN barcode or digits in the box"
-  }
+const CLAIM_ID = "{{ claim.id }}";
+const SESSION_CODE = "{{ session_code }}";
+const INITIAL_STATUS = "{{ session_status }}";
+
+const STEP_TITLES = [
+  "What happened to your car?",
+  "When and where",
+  "What happened",
+  "Where is the damage?",
+  "Photos",
+  "Check",
+  "Sign and send",
+  "Claim sent"
 ];
 
-let currentSlotIndex = 0;
+const SLOT_CONFIGS = {
+  plate: {
+    num: 1,
+    title: "License plate",
+    hint: "Photograph the license plate so every character is readable.",
+    guideClass: "guide-plate",
+    guideHint: "Center license plate in the rectangle"
+  },
+  vin: {
+    num: 2,
+    title: "VIN plate",
+    hint: "Photograph the VIN at the bottom of the windshield or on the driver's door frame.",
+    guideClass: "guide-vin",
+    guideHint: "Center VIN barcode or digits in the box"
+  },
+  damage: {
+    num: 3,
+    title: "Damage close-up",
+    hint: "Get close to the damage. Put a coin next to it for scale.",
+    guideClass: "guide-damage",
+    guideHint: "Center close-up on the damaged area"
+  },
+  wide: {
+    num: 4,
+    title: "The whole vehicle",
+    hint: "Step back so the whole vehicle is in the photo.",
+    guideClass: "guide-wide",
+    guideHint: "Align whole vehicle inside the frame"
+  }
+};
+
+const ORDERED_SLOTS = ["plate", "vin", "damage", "wide"];
+
+// State
+let currentStep = 0;
+let answers = {
+  incident_type: null,
+  date: new Date().toISOString().substring(0, 10),
+  time: "",
+  place: "",
+  city: "{{ existing_answers.city or '' }}",
+  state: "{{ existing_answers.state or claim.state or 'CA' }}",
+  statement: "{{ existing_answers.statement or claim.claimant_statement or '' }}",
+  other_vehicle: null,
+  police: null,
+  drivable: null,
+  parts: [],
+  other_parts_note: ""
+};
+
 let photos = {
-  wide: null,
-  damage: null,
   plate: null,
-  vin: null
+  vin: null,
+  damage: null,
+  wide: null
 };
+
 let retakeCounts = {
-  wide: 0,
-  damage: 0,
   plate: 0,
-  vin: 0
+  vin: 0,
+  damage: 0,
+  wide: 0
 };
 
-const video = document.getElementById("camera-feed");
-const canvas = document.getElementById("capture-canvas");
-const previewImg = document.getElementById("preview-img");
-const slotGuide = document.getElementById("slot-guide");
-const guideHint = document.getElementById("guide-hint");
-const readingBadge = document.getElementById("reading-badge");
-const cameraError = document.getElementById("camera-error");
-const btnCapture = document.getElementById("btn-capture");
-const btnRetake = document.getElementById("btn-retake");
-const btnNext = document.getElementById("btn-next");
-const btnSubmit = document.getElementById("btn-submit");
-const previewActions = document.getElementById("preview-actions");
-const retakeInfo = document.getElementById("retake-info");
-const retakeCountSpan = document.getElementById("retake-count");
-const instructionTitle = document.getElementById("instruction-title");
-const instructionDesc = document.getElementById("instruction-desc");
+// Populate existing data from server
+{% if existing_answers %}
+try {
+  const srvAnswers = {{ existing_answers | tojson }};
+  if (srvAnswers && typeof srvAnswers === 'object') {
+    Object.assign(answers, srvAnswers);
+  }
+} catch(e){}
+{% endif %}
 
-// Initialize live camera
-async function initCamera() {
+{% if existing_photos %}
+try {
+  const srvPhotos = {{ existing_photos | tojson }};
+  for (const [s, p] of Object.entries(srvPhotos)) {
+    if (p) photos[s] = p;
+  }
+} catch(e){}
+{% endif %}
+
+{% if retake_counts %}
+try {
+  const srvRetakes = {{ retake_counts | tojson }};
+  for (const [s, c] of Object.entries(srvRetakes)) {
+    retakeCounts[s] = c;
+  }
+} catch(e){}
+{% endif %}
+
+// LocalStorage Persistence
+const STORAGE_KEY = `witnessed_claim_${TOKEN}`;
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (data.answers) Object.assign(answers, data.answers);
+      if (typeof data.currentStep === 'number' && data.currentStep < 7) {
+        currentStep = data.currentStep;
+      }
+    }
+  } catch(e) {}
+}
+
+function saveToStorage() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      currentStep: currentStep,
+      answers: answers
+    }));
+  } catch(e) {}
+}
+
+async function syncAnswersToServer() {
+  saveToStorage();
+  try {
+    await fetch(`/c/${TOKEN}/answers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(answers)
+    });
+  } catch(e) {
+    console.error("Failed to sync answers", e);
+  }
+}
+
+// UI step navigation
+function updateFlowUI() {
+  // Update step elements visibility
+  for (let i = 0; i < 8; i++) {
+    const el = document.getElementById(`step-${i}`);
+    if (el) el.style.display = (i === currentStep) ? 'block' : 'none';
+  }
+
+  // Update header progress
+  const progressBar = document.getElementById('progress-bar-fill');
+  const stepSubline = document.getElementById('step-subline');
+  const header = document.getElementById('flow-header');
+  const bottomBar = document.getElementById('flow-bottom-bar');
+  const btnBack = document.getElementById('btn-back');
+  const btnContinue = document.getElementById('btn-continue');
+
+  if (currentStep === 7) {
+    // Done screen
+    header.style.display = 'none';
+    bottomBar.style.display = 'none';
+    window.scrollTo(0, 0);
+    return;
+  } else {
+    header.style.display = 'block';
+    bottomBar.style.display = 'block';
+  }
+
+  const pct = Math.round(((currentStep + 1) / 8) * 100);
+  progressBar.style.width = pct + '%';
+  stepSubline.textContent = `Step ${currentStep + 1} of 8: ${STEP_TITLES[currentStep]}`;
+
+  // Back button visibility
+  btnBack.style.display = (currentStep > 0) ? 'flex' : 'none';
+
+  // Continue button visibility & text
+  if (currentStep === 0) {
+    btnContinue.style.display = 'none';
+  } else if (currentStep === 6) {
+    btnContinue.style.display = 'flex';
+    btnContinue.textContent = 'Send my claim';
+    validateStep6();
+  } else {
+    btnContinue.style.display = 'flex';
+    btnContinue.textContent = 'Continue';
+    if (currentStep === 1) validateStep1();
+    if (currentStep === 2) validateStep2();
+    if (currentStep === 3) validateStep3();
+    if (currentStep === 4) validateStep4();
+    if (currentStep === 5) validateStep5();
+  }
+
+  window.scrollTo(0, 0);
+}
+
+function jumpToStep(stepIdx) {
+  currentStep = stepIdx;
+  saveToStorage();
+  updateFlowUI();
+}
+
+function goBack() {
+  if (currentStep > 0) {
+    currentStep--;
+    saveToStorage();
+    updateFlowUI();
+  }
+}
+
+async function goNext() {
+  if (currentStep === 1) {
+    answers.date = document.getElementById('input-date').value;
+    answers.time = document.getElementById('input-time').value;
+    answers.place = document.getElementById('input-place').value;
+    answers.city = document.getElementById('input-city').value;
+    answers.state = document.getElementById('input-state').value;
+    await syncAnswersToServer();
+    currentStep = 2;
+  } else if (currentStep === 2) {
+    answers.statement = document.getElementById('input-statement').value.trim();
+    await syncAnswersToServer();
+    currentStep = 3;
+  } else if (currentStep === 3) {
+    answers.other_parts_note = document.getElementById('input-other-parts').value.trim();
+    await syncAnswersToServer();
+    currentStep = 4;
+  } else if (currentStep === 4) {
+    currentStep = 5;
+    populateCheckStep();
+  } else if (currentStep === 5) {
+    currentStep = 6;
+    initSignatureCanvas();
+  } else if (currentStep === 6) {
+    submitClaim();
+    return;
+  }
+  saveToStorage();
+  updateFlowUI();
+}
+
+// STEP 0: Incident type picker
+function selectIncidentType(cardEl, incidentType) {
+  document.querySelectorAll('#step-0 .picker-card').forEach(c => c.classList.remove('selected'));
+  cardEl.classList.add('selected');
+  answers.incident_type = incidentType;
+  syncAnswersToServer();
+  setTimeout(() => {
+    currentStep = 1;
+    saveToStorage();
+    updateFlowUI();
+  }, 180);
+}
+
+// STEP 1: Validation
+function validateStep1() {
+  const dateVal = document.getElementById('input-date').value;
+  const btn = document.getElementById('btn-continue');
+  btn.disabled = !dateVal;
+}
+
+// STEP 2: Chips & Statement validation
+function selectChip(category, value) {
+  answers[category] = value;
+  const container = document.getElementById(`chips-${category}`);
+  if (container) {
+    container.querySelectorAll('.chip-btn').forEach(btn => {
+      btn.classList.toggle('selected', btn.getAttribute('data-value') === value);
+    });
+  }
+  validateStep2();
+}
+
+function validateStep2() {
+  const stmt = document.getElementById('input-statement').value.trim();
+  const btn = document.getElementById('btn-continue');
+  const valid = stmt.length >= 10 && answers['drivable'] !== null;
+  btn.disabled = !valid;
+}
+
+// STEP 3: Parts & SVG Sync
+function togglePart(partName) {
+  const idx = answers.parts.indexOf(partName);
+  if (idx >= 0) {
+    answers.parts.splice(idx, 1);
+  } else {
+    answers.parts.push(partName);
+  }
+  updatePartsUI();
+  validateStep3();
+}
+
+function updatePartsUI() {
+  // Update chips
+  document.querySelectorAll('.parts-chips-grid .part-chip').forEach(chip => {
+    const p = chip.getAttribute('data-part');
+    chip.classList.toggle('selected', answers.parts.includes(p));
+  });
+
+  // Update SVG zones
+  document.querySelectorAll('.car-zone').forEach(zone => {
+    const p = zone.getAttribute('data-part');
+    if (answers.parts.includes(p)) {
+      zone.classList.add('selected');
+    } else {
+      zone.classList.remove('selected');
+    }
+  });
+}
+
+function validateStep3() {
+  const btn = document.getElementById('btn-continue');
+  btn.disabled = answers.parts.length === 0;
+}
+
+// STEP 4: Photos UI & Progress
+function updatePhotosUI() {
+  let doneCount = 0;
+  ORDERED_SLOTS.forEach(slot => {
+    const card = document.getElementById(`card-slot-${slot}`);
+    const badge = document.getElementById(`badge-slot-${slot}`);
+    const action = document.getElementById(`action-slot-${slot}`);
+    const photo = photos[slot];
+
+    if (photo && photo.sha256) {
+      doneCount++;
+      badge.classList.add('done');
+      badge.textContent = "✓";
+
+      const isRead = photo.status === 'read';
+      const statusHtml = isRead
+        ? `<div class="status-badge-green">✓ Looks good</div>`
+        : `<div class="status-badge-amber">⚠ We couldn't read this. Retake it?</div>`;
+
+      const retakesLeft = Math.max(0, 3 - (retakeCounts[slot] || 0));
+      const retakeBtnHtml = (retakesLeft > 0)
+        ? `<button type="button" class="btn-retake-link" onclick="openCamera('${slot}')">Retake (${retakesLeft} left)</button>`
+        : `<span style="font-size: 12px; color: #94a3b8;">No retakes left</span>`;
+
+      action.innerHTML = `
+        <div class="photo-preview-result">
+          <img src="/photos/${photo.sha256}" alt="${slot}" class="photo-thumb-img">
+          <div class="photo-preview-status">
+            ${statusHtml}
+            ${retakeBtnHtml}
+          </div>
+        </div>
+      `;
+    } else {
+      badge.classList.remove('done');
+      badge.textContent = SLOT_CONFIGS[slot].num;
+      action.innerHTML = `
+        <button type="button" class="btn-take-photo-green" onclick="openCamera('${slot}')">
+          📷 Take photo
+        </button>
+      `;
+    }
+  });
+
+  document.getElementById('photos-progress-label').textContent = `${doneCount} of 4 done`;
+  document.getElementById('photos-progress-bar').style.width = `${(doneCount / 4) * 100}%`;
+  validateStep4();
+}
+
+function validateStep4() {
+  const allFourDone = ORDERED_SLOTS.every(s => photos[s] && photos[s].sha256);
+  const btn = document.getElementById('btn-continue');
+  btn.disabled = !allFourDone;
+}
+
+// Camera Handling (getUserMedia)
+let activeCameraStream = null;
+let activeSlot = null;
+let currentCapturedBlob = null;
+
+const cameraModal = document.getElementById('camera-modal');
+const cameraFeed = document.getElementById('camera-feed');
+const cameraPreviewImg = document.getElementById('camera-preview-img');
+const slotGuide = document.getElementById('slot-guide');
+const guideHint = document.getElementById('guide-hint');
+const readingBadge = document.getElementById('reading-badge');
+const cameraErrorBox = document.getElementById('camera-error-box');
+const btnShutter = document.getElementById('btn-shutter');
+const cameraPreviewActions = document.getElementById('camera-preview-actions');
+const btnCamRetake = document.getElementById('btn-cam-retake');
+
+async function openCamera(slot) {
+  activeSlot = slot;
+  const cfg = SLOT_CONFIGS[slot];
+  document.getElementById('camera-modal-title').textContent = cfg.title;
+
+  slotGuide.className = "slot-guide " + cfg.guideClass;
+  guideHint.textContent = cfg.guideHint;
+
+  cameraPreviewImg.style.display = 'none';
+  cameraFeed.style.display = 'block';
+  slotGuide.style.display = 'flex';
+  btnShutter.style.display = 'block';
+  cameraPreviewActions.style.display = 'none';
+  cameraErrorBox.style.display = 'none';
+  cameraModal.style.display = 'flex';
+
   try {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       throw new Error("getUserMedia not supported");
     }
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" },
+      video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
       audio: false
     });
-    video.srcObject = stream;
-    await video.play();
-  } catch (err) {
-    video.style.display = "none";
-    slotGuide.style.display = "none";
-    btnCapture.disabled = true;
-    cameraError.style.display = "block";
+    activeCameraStream = stream;
+    cameraFeed.srcObject = stream;
+    await cameraFeed.play();
+  } catch(err) {
+    cameraFeed.style.display = 'none';
+    slotGuide.style.display = 'none';
+    btnShutter.style.display = 'none';
+    cameraErrorBox.style.display = 'block';
   }
 }
 
-function updateSlotUI() {
-  const slot = SLOTS[currentSlotIndex];
-  instructionTitle.textContent = slot.title;
-  instructionDesc.textContent = slot.desc;
-
-  // Update guide overlay
-  slotGuide.className = "slot-guide " + slot.guideClass;
-  guideHint.textContent = slot.hint;
-
-  SLOTS.forEach((s, idx) => {
-    const el = document.getElementById("step-" + s.id);
-    el.classList.remove("active");
-    if (photos[s.id]) {
-      el.classList.add("completed");
-      el.textContent = "✓ " + s.tabLabel;
-    } else {
-      el.classList.remove("completed");
-      el.textContent = s.tabLabel;
-    }
-    if (idx === currentSlotIndex) {
-      el.classList.add("active");
-    }
-  });
-
-  const slotPhoto = photos[slot.id];
-  const retakesLeft = Math.max(0, 3 - retakeCounts[slot.id]);
-  retakeCountSpan.textContent = retakesLeft;
-
-  if (slotPhoto) {
-    video.style.display = "none";
-    slotGuide.style.display = "none";
-    previewImg.src = "/photos/" + slotPhoto.sha256;
-    previewImg.style.display = "block";
-    btnCapture.style.display = "none";
-    previewActions.style.display = "flex";
-    retakeInfo.style.display = "block";
-
-    if (retakesLeft <= 0) {
-      btnRetake.disabled = true;
-      btnRetake.textContent = "No retakes left";
-    } else {
-      btnRetake.disabled = false;
-      btnRetake.textContent = "Retake (" + retakesLeft + " left)";
-    }
-    btnNext.textContent = "Use photo";
-  } else {
-    previewImg.style.display = "none";
-    video.style.display = "block";
-    slotGuide.style.display = "flex";
-    btnCapture.style.display = "block";
-    previewActions.style.display = "none";
-    retakeInfo.style.display = "none";
+function closeCamera() {
+  if (activeCameraStream) {
+    activeCameraStream.getTracks().forEach(t => t.stop());
+    activeCameraStream = null;
   }
-
-  // Check if all 4 slots completed
-  const allCompleted = SLOTS.every(s => photos[s.id] !== null);
-  btnSubmit.disabled = !allCompleted;
+  cameraModal.style.display = 'none';
+  activeSlot = null;
 }
 
-btnCapture.addEventListener("click", async () => {
-  const slot = SLOTS[currentSlotIndex];
-  canvas.width = video.videoWidth || 640;
-  canvas.height = video.videoHeight || 480;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+function snapPhoto() {
+  const canvas = document.getElementById('capture-canvas');
+  canvas.width = cameraFeed.videoWidth || 1280;
+  canvas.height = cameraFeed.videoHeight || 960;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(cameraFeed, 0, 0, canvas.width, canvas.height);
 
-  canvas.toBlob(async (blob) => {
-    btnCapture.disabled = true;
-    btnCapture.textContent = "Reading…";
-    readingBadge.style.display = "flex";
+  // Watermark session code in bottom-right corner
+  ctx.save();
+  const fontSize = Math.max(18, Math.floor(canvas.width / 32));
+  ctx.font = `bold ${fontSize}px "IBM Plex Mono", monospace, sans-serif`;
+  const text = `Session ${SESSION_CODE}`;
+  const textMetrics = ctx.measureText(text);
+  const padX = fontSize * 0.7;
+  const padY = fontSize * 0.4;
+  const pillW = textMetrics.width + padX * 2;
+  const pillH = fontSize + padY * 2;
+  const x = canvas.width - pillW - 24;
+  const y = canvas.height - pillH - 24;
 
-    try {
-      const resp = await fetch("/c/" + TOKEN + "/photo/" + slot.id, {
-        method: "POST",
-        headers: { "Content-Type": "image/jpeg" },
-        body: blob
-      });
+  ctx.fillStyle = "rgba(15, 107, 82, 0.9)";
+  ctx.beginPath();
+  ctx.roundRect(x, y, pillW, pillH, 8);
+  ctx.fill();
 
-      readingBadge.style.display = "none";
+  ctx.fillStyle = "#ffffff";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x + padX, y + pillH / 2);
+  ctx.restore();
 
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
-        alert(errData.detail || "Failed to upload photo.");
-        btnCapture.disabled = false;
-        btnCapture.textContent = "Take Photo";
-        return;
-      }
+  canvas.toBlob(blob => {
+    currentCapturedBlob = blob;
+    cameraPreviewImg.src = URL.createObjectURL(blob);
+    cameraFeed.style.display = 'none';
+    slotGuide.style.display = 'none';
+    cameraPreviewImg.style.display = 'block';
 
-      const data = await resp.json();
-      photos[slot.id] = data;
-      if (typeof data.retakes_left === "number") {
-        retakeCounts[slot.id] = Math.max(0, 3 - data.retakes_left);
-      }
-      btnCapture.disabled = false;
-      btnCapture.textContent = "Take Photo";
-      updateSlotUI();
-    } catch (e) {
-      readingBadge.style.display = "none";
-      alert("Network error while uploading photo. Please try again.");
-      btnCapture.disabled = false;
-      btnCapture.textContent = "Take Photo";
-    }
-  }, "image/jpeg", 0.9);
-});
+    btnShutter.style.display = 'none';
+    cameraPreviewActions.style.display = 'flex';
 
-btnRetake.addEventListener("click", () => {
-  const slot = SLOTS[currentSlotIndex];
-  if (retakeCounts[slot.id] >= 3) return;
-  photos[slot.id] = null;
-  updateSlotUI();
-});
+    const retakesLeft = Math.max(0, 3 - (retakeCounts[activeSlot] || 0));
+    btnCamRetake.textContent = `Retake (${retakesLeft} left)`;
+    btnCamRetake.disabled = retakesLeft <= 0;
+  }, 'image/jpeg', 0.92);
+}
 
-btnNext.addEventListener("click", () => {
-  // "Use photo" moves to the next slot
-  if (currentSlotIndex < SLOTS.length - 1) {
-    currentSlotIndex++;
-  } else {
-    // Wrap to first incomplete slot if any
-    const firstIncomplete = SLOTS.findIndex(s => photos[s.id] === null);
-    if (firstIncomplete !== -1) {
-      currentSlotIndex = firstIncomplete;
-    }
-  }
-  updateSlotUI();
-});
+function retakePhotoInCamera() {
+  currentCapturedBlob = null;
+  cameraPreviewImg.style.display = 'none';
+  cameraFeed.style.display = 'block';
+  slotGuide.style.display = 'flex';
+  btnShutter.style.display = 'block';
+  cameraPreviewActions.style.display = 'none';
+}
 
-SLOTS.forEach((s, idx) => {
-  document.getElementById("step-" + s.id).addEventListener("click", () => {
-    currentSlotIndex = idx;
-    updateSlotUI();
-  });
-});
+async function usePhotoFromCamera() {
+  const slot = activeSlot;
+  const blob = currentCapturedBlob;
+  closeCamera();
 
-btnSubmit.addEventListener("click", async () => {
-  btnSubmit.disabled = true;
-  btnSubmit.textContent = "Submitting Claim Photos...";
+  // Show Checking… on the card
+  const action = document.getElementById(`action-slot-${slot}`);
+  action.innerHTML = `
+    <div class="photo-preview-result">
+      <div class="status-checking">
+        <span class="spinner-sm"></span> Checking…
+      </div>
+    </div>
+  `;
 
   try {
-    const resp = await fetch("/c/" + TOKEN + "/submit", {
-      method: "POST",
-      headers: { "Accept": "application/json" }
+    const resp = await fetch(`/c/${TOKEN}/photo/${slot}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: blob
     });
 
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
-      alert(err.detail || "Submission failed.");
-      btnSubmit.disabled = false;
-      btnSubmit.textContent = "Submit All 4 Photos";
+      alert(err.detail || "Upload failed");
+      updatePhotosUI();
       return;
     }
 
     const data = await resp.json();
-    if (data.redirect) {
-      window.location.href = data.redirect;
-    } else {
-      window.location.href = "/c/" + TOKEN + "/complete";
+    photos[slot] = data;
+    if (typeof data.retakes_left === 'number') {
+      retakeCounts[slot] = Math.max(0, 3 - data.retakes_left);
     }
-  } catch (e) {
-    alert("Network error submitting photos. Please try again.");
-    btnSubmit.disabled = false;
-    btnSubmit.textContent = "Submit All 4 Photos";
+    updatePhotosUI();
+  } catch(e) {
+    alert("Network error uploading photo.");
+    updatePhotosUI();
   }
+}
+
+// STEP 5: Populate Check Step
+function populateCheckStep() {
+  const checklist = document.getElementById('check-checklist');
+  let items = [];
+
+  ORDERED_SLOTS.forEach(slot => {
+    const p = photos[slot];
+    const cfg = SLOT_CONFIGS[slot];
+    if (p && p.status === 'read') {
+      items.push(`<div class="check-line green">✓ ${cfg.title} looks good</div>`);
+    } else {
+      items.push(`<div class="check-line amber">⚠ We couldn't read ${cfg.title.toLowerCase()}</div>`);
+    }
+  });
+  items.push(`<div class="check-line green">✓ 4 of 4 required photos taken live</div>`);
+  checklist.innerHTML = items.join('');
+
+  // What happened review
+  document.getElementById('rev-date').textContent = answers.date || '-';
+  document.getElementById('rev-location').textContent = `${answers.city || ''}, ${answers.state || ''}`.replace(/^, /, '') || '-';
+  document.getElementById('rev-statement').textContent = answers.statement || '-';
+
+  // Vehicle review
+  document.getElementById('rev-drivable').textContent = answers.drivable || 'Yes';
+
+  // Damage review
+  document.getElementById('rev-parts').textContent = answers.parts.length ? answers.parts.join(', ') : '-';
+  document.getElementById('rev-other-parts').textContent = answers.other_parts_note || 'None';
+
+  // Photos thumbnails
+  const thumbsGrid = document.getElementById('rev-photos-grid');
+  thumbsGrid.innerHTML = ORDERED_SLOTS.map(slot => {
+    const p = photos[slot];
+    if (p && p.sha256) {
+      return `<img src="/photos/${p.sha256}" alt="${slot}" class="review-single-thumb">`;
+    }
+    return '';
+  }).join('');
+}
+
+function validateStep5() {
+  document.getElementById('btn-continue').disabled = false;
+}
+
+// STEP 6: Signature Pad & Send Claim
+let sigCanvas = null;
+let sigCtx = null;
+let isDrawing = false;
+let hasSignatureStrokes = false;
+
+function initSignatureCanvas() {
+  sigCanvas = document.getElementById('signature-canvas');
+  if (!sigCanvas) return;
+  sigCtx = sigCanvas.getContext('2d');
+
+  // Match drawing buffer to displayed client rect
+  const rect = sigCanvas.getBoundingClientRect();
+  if (rect.width > 0) {
+    sigCanvas.width = rect.width;
+    sigCanvas.height = rect.height;
+  }
+  sigCtx.lineWidth = 2.5;
+  sigCtx.lineCap = 'round';
+  sigCtx.lineJoin = 'round';
+  sigCtx.strokeStyle = '#0f172a';
+
+  function getPos(e) {
+    const r = sigCanvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: clientX - r.left,
+      y: clientY - r.top
+    };
+  }
+
+  function startDraw(e) {
+    e.preventDefault();
+    isDrawing = true;
+    const pos = getPos(e);
+    sigCtx.beginPath();
+    sigCtx.moveTo(pos.x, pos.y);
+  }
+
+  function draw(e) {
+    if (!isDrawing) return;
+    e.preventDefault();
+    const pos = getPos(e);
+    sigCtx.lineTo(pos.x, pos.y);
+    sigCtx.stroke();
+    hasSignatureStrokes = true;
+    validateStep6();
+  }
+
+  function stopDraw(e) {
+    if (isDrawing) {
+      isDrawing = false;
+      validateStep6();
+    }
+  }
+
+  sigCanvas.addEventListener('mousedown', startDraw);
+  sigCanvas.addEventListener('mousemove', draw);
+  window.addEventListener('mouseup', stopDraw);
+
+  sigCanvas.addEventListener('touchstart', startDraw, { passive: false });
+  sigCanvas.addEventListener('touchmove', draw, { passive: false });
+  window.addEventListener('touchend', stopDraw);
+}
+
+function clearSignature() {
+  if (sigCanvas && sigCtx) {
+    sigCtx.clearRect(0, 0, sigCanvas.width, sigCanvas.height);
+    hasSignatureStrokes = false;
+    validateStep6();
+  }
+}
+
+function validateStep6() {
+  const name = document.getElementById('input-signer-name').value.trim();
+  const confirmed = document.getElementById('checkbox-confirm').checked;
+  const statusMsg = document.getElementById('sig-status-msg');
+  const btn = document.getElementById('btn-continue');
+
+  const valid = (name.length > 0) && confirmed && hasSignatureStrokes;
+  btn.disabled = !valid;
+
+  if (valid) {
+    statusMsg.textContent = "Signature recorded";
+    statusMsg.style.color = "#0f6b52";
+  } else if (!hasSignatureStrokes) {
+    statusMsg.textContent = "Before sending: Your signature";
+    statusMsg.style.color = "#64748b";
+  }
+}
+
+async function submitClaim() {
+  const btn = document.getElementById('btn-continue');
+  btn.disabled = true;
+  btn.textContent = "Sending claim...";
+
+  const name = document.getElementById('input-signer-name').value.trim();
+  const signatureDataUrl = sigCanvas.toDataURL('image/png');
+
+  try {
+    const resp = await fetch(`/c/${TOKEN}/submit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        signer_name: name,
+        confirmed: true,
+        signature: signatureDataUrl,
+        answers: answers
+      })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      alert(err.detail || "Submission failed");
+      btn.disabled = false;
+      btn.textContent = "Send my claim";
+      return;
+    }
+
+    // Success! Show Step 7
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch(e){}
+    currentStep = 7;
+    updateFlowUI();
+  } catch(e) {
+    alert("Network error sending claim. Please try again.");
+    btn.disabled = false;
+    btn.textContent = "Send my claim";
+  }
+}
+
+// Initial Boot
+window.addEventListener('DOMContentLoaded', () => {
+  if (INITIAL_STATUS === 'submitted') {
+    currentStep = 7;
+    updateFlowUI();
+    return;
+  }
+
+  loadFromStorage();
+
+  // Populate inputs with current answers
+  if (answers.date) document.getElementById('input-date').value = answers.date;
+  if (answers.time) document.getElementById('input-time').value = answers.time;
+  if (answers.place) document.getElementById('input-place').value = answers.place;
+  if (answers.city) document.getElementById('input-city').value = answers.city;
+  if (answers.state) document.getElementById('input-state').value = answers.state;
+  if (answers.statement) document.getElementById('input-statement').value = answers.statement;
+  if (answers.other_parts_note) document.getElementById('input-other-parts').value = answers.other_parts_note;
+
+  if (answers.other_vehicle) selectChip('other-vehicle', answers.other_vehicle);
+  if (answers.police) selectChip('police', answers.police);
+  if (answers.drivable) selectChip('drivable', answers.drivable);
+
+  updatePartsUI();
+  updatePhotosUI();
+  updateFlowUI();
 });
-
-// Load existing photos if any
-{% if existing_photos %}
-const serverPhotos = {{ existing_photos | tojson }};
-for (const [slot, photo] of Object.entries(serverPhotos)) {
-  if (photo) {
-    photos[slot] = photo;
-  }
-}
-{% endif %}
-{% if retake_counts %}
-const serverRetakes = {{ retake_counts | tojson }};
-for (const [slot, count] of Object.entries(serverRetakes)) {
-  retakeCounts[slot] = count;
-}
-{% endif %}
-
-initCamera();
-updateSlotUI();
 </script>
 </body>
 </html>

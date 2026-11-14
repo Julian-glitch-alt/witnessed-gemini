@@ -60,6 +60,32 @@ def _create_claim_and_token(client: TestClient, claimant_name: str = "Test Claim
     return claim_id, token
 
 
+SAMPLE_SIG = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
+def _submit_session(client: TestClient, token: str, signer_name: str = "Test Claimant") -> None:
+    ans = {
+        "incident_type": "Crash with another vehicle",
+        "date": "2026-10-27",
+        "statement": "Rear hit",
+        "parts": ["Rear bumper"],
+        "drivable": "Yes",
+    }
+    client.post(f"/c/{token}/answers", json=ans)
+    client.post(
+        f"/c/{token}/submit",
+        json={
+            "signer_name": signer_name,
+            "confirmed": True,
+            "signature": SAMPLE_SIG,
+            "answers": ans,
+        },
+        headers={"Accept": "application/json"},
+    )
+
+
 def test_sidebar_removes_admin_section_and_dead_links(client: TestClient):
     # Requirement 1: remove the "Admin" section (Settings, System health, Developers).
     resp = client.get("/console")
@@ -86,7 +112,7 @@ def test_review_card_ordering_pills_and_finding_numbers(client: TestClient, monk
     c1_id, c1_token = _create_claim_and_token(client, "Claimant One")
     for s in ("wide", "damage", "plate", "vin"):
         client.post(f"/c/{c1_token}/photo/{s}", content=TINY_JPEG + b"_c1_" + s.encode(), headers={"Content-Type": "image/jpeg"})
-    client.post(f"/c/{c1_token}/submit", headers={"Accept": "application/json"})
+    _submit_session(client, c1_token, "Claimant One")
 
     # 2. Second claim:
     # - photo_reused: red (reusing c1's damage photo)
@@ -109,16 +135,17 @@ def test_review_card_ordering_pills_and_finding_numbers(client: TestClient, monk
     for s in ("wide", "damage", "plate", "vin"):
         content = TINY_JPEG + b"_c1_damage" if s == "damage" else TINY_JPEG + b"_c2_" + s.encode()
         client.post(f"/c/{c2_token}/photo/{s}", content=content, headers={"Content-Type": "image/jpeg"})
-    client.post(f"/c/{c2_token}/submit", headers={"Accept": "application/json"})
+    _submit_session(client, c2_token, "Claimant Two")
 
     report_resp = client.get(f"/console/claims/{c2_id}")
     assert report_resp.status_code == 200
     html = report_resp.text
 
-    # Verify group order: Photo integrity (red) first, Vehicle and plate (amber) second, Damage (green) third
-    pos_photo_int = html.find("1. Photo integrity")
-    pos_veh_plate = html.find("2. Vehicle and plate")
-    pos_damage = html.find("3. Damage")
+    # Verify group order in the Review card: Photo integrity (red) first, Vehicle and plate (amber) second, Damage (green) third
+    review_html = html[html.find("Review"):]
+    pos_photo_int = review_html.find("1. Photo integrity")
+    pos_veh_plate = review_html.find("2. Vehicle and plate")
+    pos_damage = review_html.find("3. Damage")
     assert pos_photo_int != -1
     assert pos_veh_plate != -1
     assert pos_damage != -1
@@ -150,7 +177,7 @@ def test_photos_slot_borders_and_markers(client: TestClient, monkeypatch):
     c1_id, c1_token = _create_claim_and_token(client, "First Claim")
     for s in ("wide", "damage", "plate", "vin"):
         client.post(f"/c/{c1_token}/photo/{s}", content=TINY_JPEG + b"_c1_" + s.encode(), headers={"Content-Type": "image/jpeg"})
-    client.post(f"/c/{c1_token}/submit", headers={"Accept": "application/json"})
+    _submit_session(client, c1_token, "First Claim")
 
     fake_provider = FakeProvider()
     fake_provider.set_reading(
@@ -162,7 +189,7 @@ def test_photos_slot_borders_and_markers(client: TestClient, monkeypatch):
     for s in ("wide", "damage", "plate", "vin"):
         content = TINY_JPEG + b"_c1_damage" if s == "damage" else TINY_JPEG + b"_c2_" + s.encode()
         client.post(f"/c/{c2_token}/photo/{s}", content=content, headers={"Content-Type": "image/jpeg"})
-    client.post(f"/c/{c2_token}/submit", headers={"Accept": "application/json"})
+    _submit_session(client, c2_token, "Second Claim")
 
     report_resp = client.get(f"/console/claims/{c2_id}")
     html = report_resp.text
@@ -184,14 +211,14 @@ def test_checks_line_human_labels_and_singular_plural(client: TestClient, monkey
     c1_id, c1_token = _create_claim_and_token(client, "Claim A")
     for s in ("wide", "damage", "plate", "vin"):
         client.post(f"/c/{c1_token}/photo/{s}", content=TINY_JPEG + b"_cA_" + s.encode(), headers={"Content-Type": "image/jpeg"})
-    client.post(f"/c/{c1_token}/submit", headers={"Accept": "application/json"})
+    _submit_session(client, c1_token, "Claim A")
 
     # Single issue: photo_reused (singular "1 issue needs review: Photo reused.")
     c2_id, c2_token = _create_claim_and_token(client, "Claim B")
     for s in ("wide", "damage", "plate", "vin"):
         content = TINY_JPEG + b"_cA_damage" if s == "damage" else TINY_JPEG + b"_cB_" + s.encode()
         client.post(f"/c/{c2_token}/photo/{s}", content=content, headers={"Content-Type": "image/jpeg"})
-    client.post(f"/c/{c2_token}/submit", headers={"Accept": "application/json"})
+    _submit_session(client, c2_token, "Claim B")
 
     r2 = client.get(f"/console/claims/{c2_id}")
     assert r2.status_code == 200
@@ -210,7 +237,7 @@ def test_checks_line_human_labels_and_singular_plural(client: TestClient, monkey
     for s in ("wide", "damage", "plate", "vin"):
         content = TINY_JPEG + b"_cA_damage" if s == "damage" else TINY_JPEG + b"_cC_" + s.encode()
         client.post(f"/c/{c3_token}/photo/{s}", content=content, headers={"Content-Type": "image/jpeg"})
-    client.post(f"/c/{c3_token}/submit", headers={"Accept": "application/json"})
+    _submit_session(client, c3_token, "Claim C")
 
     r3 = client.get(f"/console/claims/{c3_id}")
     assert r3.status_code == 200
@@ -237,7 +264,7 @@ def test_checks_line_human_labels_and_singular_plural(client: TestClient, monkey
     c4_id, c4_token = _create_claim_and_token(client, "Claim D")
     for s in ("wide", "damage", "plate", "vin"):
         client.post(f"/c/{c4_token}/photo/{s}", content=TINY_JPEG + b"_cD_" + s.encode(), headers={"Content-Type": "image/jpeg"})
-    client.post(f"/c/{c4_token}/submit", headers={"Accept": "application/json"})
+    _submit_session(client, c4_token, "Claim D")
 
     r4 = client.get(f"/console/claims/{c4_id}")
     assert '<span class="cite-pill">Plate</span>' in r4.text

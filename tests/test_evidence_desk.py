@@ -42,6 +42,11 @@ def client():
         yield c
 
 
+SAMPLE_SIG = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
 def _create_and_submit_claim(client: TestClient, plate_text: str = "7XYZ123", prefix: str = "") -> str:
     form_data = {
         "make": "Toyota",
@@ -62,11 +67,29 @@ def _create_and_submit_claim(client: TestClient, plate_text: str = "7XYZ123", pr
     token = match_link.group(1)
     claim_id = re.search(r"CLM-[A-F0-9]+", resp.text).group(0)
 
+    ans = {
+        "incident_type": "Crash with another vehicle",
+        "date": "2026-10-27",
+        "statement": "Rear bumper damage.",
+        "parts": ["Rear bumper"],
+        "drivable": "Yes",
+    }
+    client.post(f"/c/{token}/answers", json=ans)
+
     for slot in ("wide", "damage", "plate", "vin"):
         content = TINY_JPEG + f"_{prefix}_{slot}".encode()
         client.post(f"/c/{token}/photo/{slot}", content=content, headers={"Content-Type": "image/jpeg"})
 
-    client.post(f"/c/{token}/submit", headers={"Accept": "application/json"})
+    client.post(
+        f"/c/{token}/submit",
+        json={
+            "signer_name": f"{prefix}Jane Doe".strip(),
+            "confirmed": True,
+            "signature": SAMPLE_SIG,
+            "answers": ans,
+        },
+        headers={"Accept": "application/json"},
+    )
     return claim_id
 
 

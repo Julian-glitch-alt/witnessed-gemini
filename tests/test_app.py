@@ -70,6 +70,32 @@ def _create_claim_and_get_token(client: TestClient) -> tuple[str, str]:
     return claim_id, token
 
 
+SAMPLE_SIG = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
+def _submit_capture(client: TestClient, token: str, claimant_name: str = "Jane Doe"):
+    ans = {
+        "incident_type": "Crash with another vehicle",
+        "date": "2026-10-27",
+        "statement": "I was rear-ended at a red light.",
+        "parts": ["Rear bumper"],
+        "drivable": "Yes",
+    }
+    client.post(f"/c/{token}/answers", json=ans)
+    return client.post(
+        f"/c/{token}/submit",
+        json={
+            "signer_name": claimant_name,
+            "confirmed": True,
+            "signature": SAMPLE_SIG,
+            "answers": ans,
+        },
+        headers={"Accept": "application/json"},
+    )
+
+
 def test_root_redirects_to_console(client: TestClient):
     resp = client.get("/", follow_redirects=False)
     assert resp.status_code in (302, 303, 307)
@@ -81,7 +107,7 @@ def test_create_claim_and_capture_link_works(client: TestClient):
     resp = client.get(f"/c/{token}")
     assert resp.status_code == 200
     assert "Witnessed Evidence" in resp.text
-    assert "Take Photo" in resp.text
+    assert ("Take photo" in resp.text or "Take Photo" in resp.text)
 
 
 def test_capture_page_html_contains_no_type_file(client: TestClient):
@@ -118,9 +144,7 @@ def test_upload_to_closed_session_rejected(client: TestClient):
         assert r.status_code == 200
 
     # Submit session
-    submit_resp = client.post(
-        f"/c/{token}/submit", headers={"Accept": "application/json"}
-    )
+    submit_resp = _submit_capture(client, token)
     assert submit_resp.status_code == 200
 
     # Attempt another upload to now-closed session
@@ -143,9 +167,7 @@ def test_full_flow_with_four_jpegs_shows_findings(client: TestClient):
         )
         assert r.status_code == 200
 
-    submit_resp = client.post(
-        f"/c/{token}/submit", headers={"Accept": "application/json"}
-    )
+    submit_resp = _submit_capture(client, token)
     assert submit_resp.status_code == 200
 
     report_resp = client.get(f"/console/claims/{claim_id}")
@@ -180,9 +202,7 @@ def test_demo_case_wrong_plate_is_red(client: TestClient, monkeypatch):
         )
         assert r.status_code == 200
 
-    submit_resp = client.post(
-        f"/c/{token}/submit", headers={"Accept": "application/json"}
-    )
+    submit_resp = _submit_capture(client, token)
     assert submit_resp.status_code == 200
 
     report_resp = client.get(f"/console/claims/{claim_id}")
@@ -205,7 +225,7 @@ def test_package_download_and_verify_tamper_detection(client: TestClient):
             headers={"Content-Type": "image/jpeg"},
         )
 
-    client.post(f"/c/{token}/submit", headers={"Accept": "application/json"})
+    _submit_capture(client, token)
 
     # Download package
     pkg_resp = client.get(f"/console/claims/{claim_id}/package")
@@ -342,7 +362,7 @@ def test_honest_wording_report_elements(client: TestClient):
             content=TINY_JPEG + slot.encode(),
             headers={"Content-Type": "image/jpeg"},
         )
-    client.post(f"/c/{token}/submit", headers={"Accept": "application/json"})
+    _submit_capture(client, token)
 
     report_resp = client.get(f"/console/claims/{claim_id}")
     assert report_resp.status_code == 200
@@ -373,7 +393,7 @@ def test_honest_wording_with_issues_shows_review_count(client: TestClient):
             content=TINY_JPEG,
             headers={"Content-Type": "image/jpeg"},
         )
-    client.post(f"/c/{token}/submit", headers={"Accept": "application/json"})
+    _submit_capture(client, token)
 
     report_resp = client.get(f"/console/claims/{claim_id}")
     assert report_resp.status_code == 200
@@ -408,7 +428,7 @@ def test_model_stored_in_photo_row_and_sealed_package(client: TestClient):
         assert prow["model"] == "fake"
 
     # Submit and download package
-    client.post(f"/c/{token}/submit", headers={"Accept": "application/json"})
+    _submit_capture(client, token)
     pkg_resp = client.get(f"/console/claims/{claim_id}/package")
     assert pkg_resp.status_code == 200
     pkg_json = json.loads(pkg_resp.json()["package"])
@@ -428,7 +448,7 @@ def test_photo_reused_between_claims_shows_red_in_report(client: TestClient):
             content=TINY_JPEG + b"_claim1_" + slot.encode(),
             headers={"Content-Type": "image/jpeg"},
         )
-    client.post(f"/c/{token1}/submit", headers={"Accept": "application/json"})
+    _submit_capture(client, token1)
 
     # Claim 2: damage photo is byte-identical to Claim 1's damage photo
     claim2_id, token2 = _create_claim_and_get_token(client)
@@ -442,7 +462,7 @@ def test_photo_reused_between_claims_shows_red_in_report(client: TestClient):
             content=content,
             headers={"Content-Type": "image/jpeg"},
         )
-    client.post(f"/c/{token2}/submit", headers={"Accept": "application/json"})
+    _submit_capture(client, token2)
 
     report_resp = client.get(f"/console/claims/{claim2_id}")
     assert report_resp.status_code == 200
@@ -461,18 +481,20 @@ def test_report_page_sections_order(client: TestClient):
             content=TINY_JPEG + b"_ord_" + slot.encode(),
             headers={"Content-Type": "image/jpeg"},
         )
-    client.post(f"/c/{token}/submit", headers={"Accept": "application/json"})
+    _submit_capture(client, token)
 
     resp = client.get(f"/console/claims/{claim_id}")
     assert resp.status_code == 200
     html = resp.text
 
-    # Verify order of the Evidence Desk workspace sections: Loss Notice -> What happened -> Your vehicle -> Photos -> Review -> Your decision
+    # Verify order of the Evidence Desk workspace sections: Loss Notice -> What happened -> Your vehicle -> Damage -> Photos -> Declaration -> Review -> Your decision
     pos_header = html.find(f"Claim {claim_id}")
     pos_notice = html.find("Automobile Loss Notice")
     pos_what = html.find("1. What happened")
     pos_vehicle = html.find("2. Your vehicle")
-    pos_photos = html.find("3. Photos")
+    pos_damage = html.find("3. Damage")
+    pos_photos = html.find("4. Photos")
+    pos_decl = html.find("5. Declaration")
     pos_review = html.find("Review")
     pos_decision = html.find("Your decision")
 
@@ -480,21 +502,13 @@ def test_report_page_sections_order(client: TestClient):
     assert pos_notice != -1
     assert pos_what != -1
     assert pos_vehicle != -1
+    assert pos_damage != -1
     assert pos_photos != -1
+    assert pos_decl != -1
     assert pos_review != -1
     assert pos_decision != -1
 
-    assert pos_header < pos_notice < pos_what < pos_vehicle < pos_photos < pos_review < pos_decision
-
-    assert pos_header != -1
-    assert pos_notice != -1
-    assert pos_what != -1
-    assert pos_vehicle != -1
-    assert pos_photos != -1
-    assert pos_review != -1
-    assert pos_decision != -1
-
-    assert pos_header < pos_notice < pos_what < pos_vehicle < pos_photos < pos_review < pos_decision
+    assert pos_header < pos_notice < pos_what < pos_vehicle < pos_damage < pos_photos < pos_decl < pos_review < pos_decision
 
 
 def test_capture_page_elements_and_guides(client: TestClient):

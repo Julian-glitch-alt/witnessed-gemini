@@ -18,7 +18,7 @@ from fastapi.templating import Jinja2Templates
 import qrcode
 
 from app.db import get_connection, get_data_dir, init_db
-from witnessed.checks import run_checks
+from witnessed.checks import map_parts_to_claimed_area, run_checks
 from witnessed.providers import FakeProvider, get_provider
 from witnessed.schemas import (
     DamageReading,
@@ -399,8 +399,8 @@ async def console_create_claim(
     plate: str = Form(...),
     state: str = Form(...),
     claimant_name: str = Form(...),
-    claimant_statement: str = Form(...),
-    claimed_damage_area: str = Form(...),
+    claimant_statement: str = Form(""),
+    claimed_damage_area: str = Form(""),
 ):
     claim_id = f"CLM-{secrets.token_hex(4).upper()}"
     token = secrets.token_urlsafe(16)
@@ -471,13 +471,9 @@ async def capture_page(request: Request, token: str):
         conn.close()
         raise HTTPException(status_code=404, detail="Session not found")
 
-    if session["status"] == "submitted":
-        conn.close()
-        return templates.TemplateResponse(
-            request=request,
-            name="c_submitted.html",
-            context={"session_code": session["session_code"]},
-        )
+    claim = conn.execute(
+        "SELECT * FROM claims WHERE id = ?", (session["claim_id"],)
+    ).fetchone()
 
     photos_rows = conn.execute(
         "SELECT * FROM photos WHERE session_token = ? ORDER BY id DESC", (token,)
@@ -494,6 +490,12 @@ async def capture_page(request: Request, token: str):
             }
 
     retake_counts = json.loads(session["retake_counts"] or "{}")
+    existing_answers = {}
+    if claim and "answers_json" in claim.keys() and claim["answers_json"]:
+        try:
+            existing_answers = json.loads(claim["answers_json"])
+        except Exception:
+            existing_answers = {}
 
     return templates.TemplateResponse(
         request=request,
@@ -501,10 +503,128 @@ async def capture_page(request: Request, token: str):
         context={
             "token": token,
             "session_code": session["session_code"],
+            "session_status": session["status"],
+            "claim": claim,
             "existing_photos": existing_photos,
+            "existing_answers": existing_answers,
             "retake_counts": retake_counts,
         },
     )
+
+
+@app.post("/c/{token}/answers")
+async def save_answers(request: Request, token: str):
+    conn = get_connection()
+    session = conn.execute(
+        "SELECT * FROM sessions WHERE token = ?", (token,)
+    ).fetchone()
+    if not session:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if session["status"] != "open":
+        conn.close()
+        raise HTTPException(status_code=400, detail="Session is closed")
+
+    try:
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise ValueError("Expected JSON object")
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+
+    # Validate types
+    incident_type = data.get("incident_type")
+    date_val = data.get("date")
+    time_val = data.get("time")
+    place_val = data.get("place")
+    city_val = data.get("city")
+    state_val = data.get("state")
+    statement_val = data.get("statement")
+    other_vehicle_val = data.get("other_vehicle")
+    police_val = data.get("police")
+    drivable_val = data.get("drivable")
+    parts_val = data.get("parts")
+    other_parts_note_val = data.get("other_parts_note")
+
+    for field_name, field_val in [
+        ("incident_type", incident_type),
+        ("date", date_val),
+        ("time", time_val),
+        ("place", place_val),
+        ("city", city_val),
+        ("state", state_val),
+        ("statement", statement_val),
+        ("other_vehicle", other_vehicle_val),
+        ("police", police_val),
+        ("drivable", drivable_val),
+        ("other_parts_note", other_parts_note_val),
+    ]:
+        if field_val is not None and not isinstance(field_val, str):
+            conn.close()
+            raise HTTPException(
+                status_code=400, detail=f"{field_name} must be a string or null"
+            )
+
+    if parts_val is not None and not isinstance(parts_val, list):
+        conn.close()
+        raise HTTPException(status_code=400, detail="parts must be a list of strings")
+
+    parts_list = [str(p) for p in (parts_val or [])]
+    claimed_area = map_parts_to_claimed_area(parts_list) if parts_list else None
+
+    claim = conn.execute(
+        "SELECT * FROM claims WHERE id = ?", (session["claim_id"],)
+    ).fetchone()
+    existing_answers = {}
+    if claim and "answers_json" in claim.keys() and claim["answers_json"]:
+        try:
+            existing_answers = json.loads(claim["answers_json"])
+        except Exception:
+            existing_answers = {}
+
+    merged_answers = {
+        **existing_answers,
+        "incident_type": incident_type if incident_type is not None else existing_answers.get("incident_type"),
+        "date": date_val if date_val is not None else existing_answers.get("date"),
+        "time": time_val if time_val is not None else existing_answers.get("time"),
+        "place": place_val if place_val is not None else existing_answers.get("place"),
+        "city": city_val if city_val is not None else existing_answers.get("city"),
+        "state": state_val if state_val is not None else existing_answers.get("state"),
+        "statement": statement_val if statement_val is not None else existing_answers.get("statement"),
+        "other_vehicle": other_vehicle_val if other_vehicle_val is not None else existing_answers.get("other_vehicle"),
+        "police": police_val if police_val is not None else existing_answers.get("police"),
+        "drivable": drivable_val if drivable_val is not None else existing_answers.get("drivable"),
+        "parts": parts_list if parts_val is not None else existing_answers.get("parts", []),
+        "other_parts_note": other_parts_note_val if other_parts_note_val is not None else existing_answers.get("other_parts_note"),
+    }
+
+    answers_json = json.dumps(merged_answers)
+    stmt = (
+        statement_val.strip()
+        if statement_val and isinstance(statement_val, str) and statement_val.strip()
+        else None
+    )
+
+    with conn:
+        conn.execute(
+            """
+            UPDATE claims
+            SET answers_json = ?,
+                claimant_statement = COALESCE(?, claimant_statement),
+                claimed_damage_area = COALESCE(?, claimed_damage_area)
+            WHERE id = ?
+            """,
+            (answers_json, stmt, claimed_area, session["claim_id"]),
+        )
+    conn.close()
+
+    return {
+        "ok": True,
+        "claimed_damage_area": claimed_area,
+        "answers": merged_answers,
+    }
 
 
 @app.post("/c/{token}/photo/{slot}")
@@ -656,6 +776,92 @@ async def submit_capture(request: Request, token: str):
         conn.close()
         raise HTTPException(status_code=404, detail="Claim not found")
 
+    # Read body for submit payload (JSON or form data)
+    body_data: dict[str, Any] = {}
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
+            body_data = await request.json()
+            if not isinstance(body_data, dict):
+                body_data = {}
+        except Exception:
+            body_data = {}
+    else:
+        try:
+            form = await request.form()
+            body_data = dict(form)
+        except Exception:
+            body_data = {}
+
+    signer_name = (
+        body_data.get("signer_name")
+        or (claim["claimant_name"] if claim["claimant_name"] else None)
+    )
+    if isinstance(signer_name, str):
+        signer_name = signer_name.strip()
+    if not signer_name:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Signer name is required.")
+
+    confirmed_val = body_data.get("confirmed")
+    if isinstance(confirmed_val, str):
+        confirmed = confirmed_val.lower() in ("true", "1", "yes", "on")
+    else:
+        confirmed = bool(confirmed_val)
+    if not confirmed:
+        conn.close()
+        raise HTTPException(
+            status_code=400,
+            detail="You must confirm the information is true to the best of your knowledge.",
+        )
+
+    signature_data = body_data.get("signature")
+    if not signature_data or not isinstance(signature_data, str) or not signature_data.strip():
+        conn.close()
+        raise HTTPException(status_code=400, detail="Signature is required before submitting.")
+
+    signature_str = signature_data.strip()
+    if not signature_str.startswith("data:image/png;base64,"):
+        conn.close()
+        raise HTTPException(status_code=400, detail="Signature must be a PNG data URL.")
+
+    # Size limit: 300 KB
+    if len(signature_str.encode("utf-8")) > 300 * 1024:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Signature image exceeds 300 KB limit.")
+
+    try:
+        sig_b64_part = signature_str.split(",", 1)[1]
+        sig_bytes = base64.b64decode(sig_b64_part)
+    except Exception:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Invalid signature base64 data.")
+
+    if len(sig_bytes) > 300 * 1024:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Signature image exceeds 300 KB limit.")
+
+    sig_sha256 = hashlib.sha256(sig_bytes).hexdigest()
+
+    # Answers check
+    answers_dict: dict[str, Any] = {}
+    if "answers_json" in claim.keys() and claim["answers_json"]:
+        try:
+            answers_dict = json.loads(claim["answers_json"])
+        except Exception:
+            answers_dict = {}
+    elif "answers" in body_data and isinstance(body_data["answers"], dict):
+        answers_dict = body_data["answers"]
+    elif claim["claimant_statement"]:
+        answers_dict = {
+            "statement": claim["claimant_statement"],
+            "parts": [claim["claimed_damage_area"]] if claim["claimed_damage_area"] else ["rear"],
+        }
+
+    if not answers_dict:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Answers are required before submitting.")
+
     # Reconstruct readings
     readings: dict[str, Any] = {}
     photo_hashes: dict[str, str] = {}
@@ -711,12 +917,14 @@ async def submit_capture(request: Request, token: str):
         provider = None
 
     package_data = {
+        "answers": answers_dict,
         "claim": {
             "id": claim["id"],
             "claimant_name": claim["claimant_name"],
             "claimant_statement": claim["claimant_statement"],
             "claimed_damage_area": claim["claimed_damage_area"],
         },
+        "confirmed": True,
         "findings": [f.model_dump() for f in findings],
         "photos": photo_hashes,
         "policy": {
@@ -743,6 +951,8 @@ async def submit_capture(request: Request, token: str):
             for slot, r in readings.items()
         },
         "session_code": session["session_code"],
+        "signature_sha256": sig_sha256,
+        "signer_name": signer_name,
         "timestamps": {
             "created_at": claim["created_at"],
             "submitted_at": now_iso,
@@ -774,10 +984,24 @@ async def submit_capture(request: Request, token: str):
         conn.execute(
             """
             UPDATE claims
-            SET status = 'ready_for_review', package_bytes = ?, signature = ?, ai_summary = ?
+            SET status = 'ready_for_review',
+                package_bytes = ?,
+                signature = ?,
+                ai_summary = ?,
+                signer_name = ?,
+                signature_image = ?,
+                signed_at = ?
             WHERE id = ?
             """,
-            (pkg_bytes, sig_b64, ai_summary_json, claim["id"]),
+            (
+                pkg_bytes,
+                sig_b64,
+                ai_summary_json,
+                signer_name,
+                signature_str,
+                now_iso,
+                claim["id"],
+            ),
         )
         conn.execute(
             "UPDATE sessions SET status = 'submitted' WHERE token = ?", (token,)
@@ -796,13 +1020,20 @@ async def capture_complete(request: Request, token: str):
     session = conn.execute(
         "SELECT * FROM sessions WHERE token = ?", (token,)
     ).fetchone()
-    conn.close()
     if not session:
+        conn.close()
         raise HTTPException(status_code=404, detail="Session not found")
+    claim = conn.execute(
+        "SELECT * FROM claims WHERE id = ?", (session["claim_id"],)
+    ).fetchone()
+    conn.close()
     return templates.TemplateResponse(
         request=request,
         name="c_complete.html",
-        context={"session_code": session["session_code"]},
+        context={
+            "session_code": session["session_code"],
+            "claim": claim,
+        },
     )
 
 
@@ -1094,12 +1325,20 @@ async def claim_report(request: Request, id: str):
 
     sig_short = claim["signature"][:8] if claim["signature"] else ""
 
+    answers = {}
+    if "answers_json" in claim.keys() and claim["answers_json"]:
+        try:
+            answers = json.loads(claim["answers_json"])
+        except Exception:
+            answers = {}
+
     return templates.TemplateResponse(
         request=request,
         name="console_claim.html",
         context={
             "claim": claim,
             "session": session,
+            "answers": answers,
             "photos": photos,
             "findings": findings,
             "findings_groups": groups,

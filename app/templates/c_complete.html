@@ -3,28 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Submission Complete - Witnessed</title>
+  <title>Claim Sent - Demo Mutual Insurance</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
-<body class="capture-body" style="padding-top: 0;">
+<body class="capture-flow-body">
 
-  <div class="capture-container" style="justify-content: center; text-align: center;">
-    <div class="card" style="background: #1e293b; border-color: #334155; color: #ffffff; padding: 2rem 1.5rem;">
-      <div style="font-size: 3rem; color: #4ade80; margin-bottom: 1rem;">&#10003;</div>
-      <h1 style="color: #ffffff; font-size: 1.5rem; margin-bottom: 0.5rem;">Photos Submitted</h1>
-      <p style="color: #94a3b8; font-size: 0.95rem; margin-bottom: 1.5rem;">
-        Your photos have been cryptographically sealed and delivered to your insurance claims adjuster for review.
-      </p>
+  <main class="flow-container">
+    <div class="done-page-wrap">
+      <div class="done-check-circle">✓</div>
+      <h1 class="done-heading">Claim sent</h1>
 
-      <div style="background: #0f172a; padding: 0.75rem; border-radius: 6px; font-family: monospace; font-size: 1rem; color: #cbd5e1; margin-bottom: 1.5rem;">
-        Session: <strong>{{ session_code }}</strong>
+      <div class="done-claim-card">
+        <div class="done-claim-label">Claim number</div>
+        <div class="done-claim-number">{{ claim.id if claim else session_code }}</div>
       </div>
 
-      <p style="font-size: 0.85rem; color: #64748b;">
-        You may now safely close this window.
+      <p class="done-explainer-text">
+        Demo Mutual Insurance has received claim {{ claim.id if claim else session_code }} with your photos and answers, sealed as they arrived. You can close this page.
       </p>
     </div>
-  </div>
+  </main>
 
 </body>
 </html>
