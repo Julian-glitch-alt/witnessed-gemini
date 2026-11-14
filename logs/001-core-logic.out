@@ -1,0 +1,28 @@
+The core logic of Witnessed and its test suite have been built according to [SPEC.md](file:///home/julian/Cursor%20work-space/witnessed-gemini/SPEC.md) and [AGENTS.md](file:///home/julian/Cursor%20work-space/witnessed-gemini/AGENTS.md).
+
+### Files Created
+- [requirements.txt](file:///home/julian/Cursor%20work-space/witnessed-gemini/requirements.txt): pinned core dependencies (`fastapi`, `uvicorn`, `jinja2`, `python-multipart`, `google-genai`, `cryptography`, `pydantic`, `pytest`, `httpx`, `qrcode`).
+- [witnessed/schemas.py](file:///home/julian/Cursor%20work-space/witnessed-gemini/witnessed/schemas.py): Pydantic models for the four slot readings (`WideReading`, `DamageReading`, `PlateReading`, `VinReading`), plus `Finding` (`check`, `status`, `reason`) and `Policy`.
+- [witnessed/vin.py](file:///home/julian/Cursor%20work-space/witnessed-gemini/witnessed/vin.py): `is_valid_vin(vin) -> bool` validating 17 characters, disallowing letters I/O/Q, and verifying the ISO 3779 check digit at position 9.
+- [witnessed/checks.py](file:///home/julian/Cursor%20work-space/witnessed-gemini/witnessed/checks.py): `run_checks(policy, readings) -> list[Finding]` implementing all 5 checks (`plate_match`, `vehicle_match`, `damage_location`, `damage_present`, `vin_format`), plate normalization (uppercase, strip spaces and dashes), and ensuring missing/unreadable readings yield `unchecked` and never `green`.
+- [witnessed/providers.py](file:///home/julian/Cursor%20work-space/witnessed-gemini/witnessed/providers.py): `ReadingProvider` protocol, `FakeProvider` returning canned readings with a clean matching case as default, `GeminiProvider` using `google-genai` structured JSON output with transport-only retry logic, and `get_provider()` defaulting to `FakeProvider` when `MODEL_PROVIDER=fake` or unset.
+- [witnessed/seal.py](file:///home/julian/Cursor%20work-space/witnessed-gemini/witnessed/seal.py): Canonical JSON serialization, Ed25519 key loading/creation from `SEAL_KEY_PATH`, `seal(package) -> (package_bytes, signature_b64)`, and `verify(package_bytes, signature_b64, public_key) -> bool`.
+- [tests/test_vin.py](file:///home/julian/Cursor%20work-space/witnessed-gemini/tests/test_vin.py): Unit tests for valid VINs (`1HGCM82633A004352` and 'X' check digit), invalid length, forbidden characters (I/O/Q), invalid check digits, and non-alphanumeric inputs.
+- [tests/test_checks.py](file:///home/julian/Cursor%20work-space/witnessed-gemini/tests/test_checks.py): Tests covering all red/amber/green/unchecked paths for each check, the two SPEC demo cases (wrong plate → red; front damage with rear claimed → amber), and missing reading paths.
+- [tests/test_providers.py](file:///home/julian/Cursor%20work-space/witnessed-gemini/tests/test_providers.py): Protocol conformance, canned reading overrides, provider returning `None` leading to `unchecked` findings, and offline mock tests for `GeminiProvider` error handling and transport retries.
+- [tests/test_seal.py](file:///home/julian/Cursor%20work-space/witnessed-gemini/tests/test_seal.py): Canonical JSON formatting, key persistence, round-trip verification, signature corruption, and verification failure when altering one byte of the package.
+
+---
+
+### Test Execution Result
+
+Command executed:
+```bash
+.venv/bin/python -m pytest -q
+```
+
+Output:
+```text
+...................................                                      [100%]
+35 passed, 2 warnings in 3.02s
+```
