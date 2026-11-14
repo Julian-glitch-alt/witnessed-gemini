@@ -276,3 +276,46 @@ def test_vehicle_match_color_families_and_punctuation():
     findings = run_checks(policy, readings)
     assert _finding_map(findings)["vehicle_match"].status == "amber"
 
+
+def test_duplicate_photo_all_distinct_is_green(clean_policy, clean_readings):
+    photos = {
+        "wide": "hash_111",
+        "damage": "hash_222",
+        "plate": "hash_333",
+        "vin": "hash_444",
+    }
+    findings = run_checks(clean_policy, clean_readings, photos=photos)
+    f_map = _finding_map(findings)
+    assert "duplicate_photo" in f_map
+    assert f_map["duplicate_photo"].status == "green"
+    assert "distinct" in f_map["duplicate_photo"].reason.lower()
+
+
+def test_duplicate_photo_two_slots_duplicate_is_amber(clean_policy, clean_readings):
+    photos = {
+        "wide": "same_hash",
+        "damage": "same_hash",
+        "plate": "hash_333",
+        "vin": "hash_444",
+    }
+    findings = run_checks(clean_policy, clean_readings, photos=photos)
+    f_map = _finding_map(findings)
+    assert "duplicate_photo" in f_map
+    assert f_map["duplicate_photo"].status == "amber"
+    assert f_map["duplicate_photo"].reason == "The same image was submitted for slots wide and damage."
+
+
+def test_duplicate_photo_plate_and_vin_duplicate_is_amber(clean_policy, clean_readings):
+    photos = {
+        "wide": "hash_111",
+        "damage": "hash_222",
+        "plate": "shared_hash",
+        "vin": "shared_hash",
+    }
+    findings = run_checks(clean_policy, clean_readings, photos=photos)
+    f_map = _finding_map(findings)
+    assert "duplicate_photo" in f_map
+    assert f_map["duplicate_photo"].status == "amber"
+    assert f_map["duplicate_photo"].reason == "The same image was submitted for slots plate and vin."
+
+

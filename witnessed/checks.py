@@ -75,8 +75,48 @@ def _color_family(val: Any) -> str:
     return " ".join(words)
 
 
-def run_checks(policy: Any, readings: Any) -> list[Finding]:
-    """Execute the five plain-code checks comparing policy and AI readings."""
+def check_duplicate_photo(photos: dict[str, str] | None) -> Finding:
+    if not photos:
+        return Finding(
+            check="duplicate_photo",
+            status="green",
+            reason="All submitted photos are distinct images.",
+        )
+
+    standard_slots = ["wide", "damage", "plate", "vin"]
+    ordered_slots = [s for s in standard_slots if s in photos] + [
+        s for s in photos if s not in standard_slots
+    ]
+
+    seen: dict[str, list[str]] = {}
+    for slot in ordered_slots:
+        sha = photos.get(slot)
+        if sha:
+            seen.setdefault(sha, []).append(slot)
+
+    for sha, dup_slots in seen.items():
+        if len(dup_slots) >= 2:
+            if len(dup_slots) == 2:
+                slot_str = f"{dup_slots[0]} and {dup_slots[1]}"
+            else:
+                slot_str = f"{', '.join(dup_slots[:-1])} and {dup_slots[-1]}"
+            return Finding(
+                check="duplicate_photo",
+                status="amber",
+                reason=f"The same image was submitted for slots {slot_str}.",
+            )
+
+    return Finding(
+        check="duplicate_photo",
+        status="green",
+        reason="All submitted photos are distinct images.",
+    )
+
+
+def run_checks(
+    policy: Any, readings: Any, photos: dict[str, str] | None = None
+) -> list[Finding]:
+    """Execute the plain-code checks comparing policy, AI readings, and photos."""
     findings: list[Finding] = []
 
     # 1. plate_match
@@ -301,5 +341,9 @@ def run_checks(policy: Any, readings: Any) -> list[Finding]:
                     status="amber",
                     reason=f"VIN {vin_str} failed ISO 3779 validation.",
                 ))
+
+    # 6. duplicate_photo
+    if photos is not None:
+        findings.append(check_duplicate_photo(photos))
 
     return findings

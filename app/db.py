@@ -44,7 +44,8 @@ def init_db() -> None:
             status TEXT NOT NULL,
             created_at TEXT NOT NULL,
             package_bytes BLOB,
-            signature TEXT
+            signature TEXT,
+            ai_summary TEXT
         );
 
         CREATE TABLE IF NOT EXISTS sessions (
@@ -83,4 +84,8 @@ def init_db() -> None:
             timestamp TEXT NOT NULL
         );
         """)
+        try:
+            conn.execute("ALTER TABLE claims ADD COLUMN ai_summary TEXT;")
+        except Exception:
+            pass
     conn.close()

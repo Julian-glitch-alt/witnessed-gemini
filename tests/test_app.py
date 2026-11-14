@@ -156,7 +156,7 @@ def test_full_flow_with_four_jpegs_shows_findings(client: TestClient):
     assert "damage_present" in text
     assert "vin_format" in text
     assert "Evidence Summary" in text
-    assert "Sealed & Verified" in text
+    assert "Sealed. Ed25519 signature is valid" in text
 
 
 def test_demo_case_wrong_plate_is_red(client: TestClient, monkeypatch):
@@ -280,3 +280,104 @@ def test_decision_endpoint_accepts_only_allowed_actions(client: TestClient):
     )
     assert resp_escalate.status_code == 200
     assert "Escalated SIU" in resp_escalate.text
+
+
+def test_retake_counter_progression_and_limit(client: TestClient):
+    _, token = _create_claim_and_get_token(client)
+
+    # 1st capture: first capture of a slot must not consume a retake (retakes_left is 3)
+    r1 = client.post(
+        f"/c/{token}/photo/wide",
+        content=TINY_JPEG,
+        headers={"Content-Type": "image/jpeg"},
+    )
+    assert r1.status_code == 200
+    assert r1.json()["retakes_left"] == 3
+
+    # Retake 1: consumes 1 retake (retakes_left is 2)
+    r2 = client.post(
+        f"/c/{token}/photo/wide",
+        content=TINY_JPEG,
+        headers={"Content-Type": "image/jpeg"},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["retakes_left"] == 2
+
+    # Retake 2: consumes 1 retake (retakes_left is 1)
+    r3 = client.post(
+        f"/c/{token}/photo/wide",
+        content=TINY_JPEG,
+        headers={"Content-Type": "image/jpeg"},
+    )
+    assert r3.status_code == 200
+    assert r3.json()["retakes_left"] == 1
+
+    # Retake 3: consumes 1 retake (retakes_left is 0)
+    r4 = client.post(
+        f"/c/{token}/photo/wide",
+        content=TINY_JPEG,
+        headers={"Content-Type": "image/jpeg"},
+    )
+    assert r4.status_code == 200
+    assert r4.json()["retakes_left"] == 0
+
+    # Further upload after 3 retakes returns 409
+    r5 = client.post(
+        f"/c/{token}/photo/wide",
+        content=TINY_JPEG,
+        headers={"Content-Type": "image/jpeg"},
+    )
+    assert r5.status_code == 409
+
+
+def test_honest_wording_report_elements(client: TestClient):
+    claim_id, token = _create_claim_and_get_token(client)
+
+    # Distinct images per slot so duplicate_photo is green
+    for slot in ("wide", "damage", "plate", "vin"):
+        client.post(
+            f"/c/{token}/photo/{slot}",
+            content=TINY_JPEG + slot.encode(),
+            headers={"Content-Type": "image/jpeg"},
+        )
+    client.post(f"/c/{token}/submit", headers={"Accept": "application/json"})
+
+    report_resp = client.get(f"/console/claims/{claim_id}")
+    assert report_resp.status_code == 200
+    html = report_resp.text
+
+    # Code-built summary line for all green
+    assert "No issues found by the automated checks. The adjuster makes the decision." in html
+    assert "All checks passed cleanly with verified match." not in html
+
+    # Status pill text: Match instead of Pass
+    assert "Match" in html
+
+    # Seal box text and muted line
+    assert "Sealed. Ed25519 signature is valid: this package has not changed since the server received it." in html
+    assert "The seal shows the package was not altered after receipt. It does not prove what the camera saw." in html
+
+    # Subtitle under evidence photos
+    assert "Captured in the live camera flow, session" in html
+
+
+def test_honest_wording_with_issues_shows_review_count(client: TestClient):
+    claim_id, token = _create_claim_and_get_token(client)
+
+    # Identical images for all slots triggers duplicate_photo amber
+    for slot in ("wide", "damage", "plate", "vin"):
+        client.post(
+            f"/c/{token}/photo/{slot}",
+            content=TINY_JPEG,
+            headers={"Content-Type": "image/jpeg"},
+        )
+    client.post(f"/c/{token}/submit", headers={"Accept": "application/json"})
+
+    report_resp = client.get(f"/console/claims/{claim_id}")
+    assert report_resp.status_code == 200
+    html = report_resp.text
+
+    assert "1 issue(s) need review: duplicate_photo" in html
+    assert "Review" in html
+
+

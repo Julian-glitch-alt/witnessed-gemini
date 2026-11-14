@@ -48,3 +48,13 @@ class Policy(BaseModel):
     claimant_name: str | None = None
     claimant_statement: str | None = None
     claimed_damage_area: str | None = None
+
+
+class SummarySentence(BaseModel):
+    text: str
+    cites: list[str]
+
+
+class SummaryResult(BaseModel):
+    sentences: list[SummarySentence] = Field(default_factory=list, max_length=3)
+

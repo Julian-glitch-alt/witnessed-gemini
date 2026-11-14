@@ -27,6 +27,7 @@ from witnessed.schemas import (
     WideReading,
 )
 from witnessed.seal import load_or_create_key, seal, verify
+from witnessed.summary import summarize
 
 SLOT_SCHEMAS: dict[str, type[Any]] = {
     "wide": WideReading,
@@ -54,7 +55,7 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 def build_findings_summary(findings: list[Any]) -> str:
     if not findings:
-        return "No findings recorded."
+        return "No issues found by the automated checks. The adjuster makes the decision."
 
     def _status(f: Any) -> str:
         if hasattr(f, "status"):
@@ -69,18 +70,10 @@ def build_findings_summary(findings: list[Any]) -> str:
         except Exception:
             return f["check"]
 
-    reds = [_check(f) for f in findings if _status(f) == "red"]
-    ambers = [_check(f) for f in findings if _status(f) == "amber"]
-    uncheckeds = [_check(f) for f in findings if _status(f) == "unchecked"]
-
-    if reds:
-        return f"Flagged for adjuster review: {len(reds)} red finding(s) detected ({', '.join(reds)})."
-    elif ambers:
-        return f"Caution: {len(ambers)} amber finding(s) detected ({', '.join(ambers)})."
-    elif uncheckeds:
-        return f"Partially verified: {len(uncheckeds)} check(s) unchecked."
-    else:
-        return "All checks passed cleanly with verified match."
+    issues = [_check(f) for f in findings if _status(f) in ("red", "amber")]
+    if issues:
+        return f"{len(issues)} issue(s) need review: {', '.join(issues)}"
+    return "No issues found by the automated checks. The adjuster makes the decision."
 
 
 def generate_qr_data_uri(data_url: str) -> str:
@@ -246,12 +239,15 @@ async def upload_photo(request: Request, token: str, slot: str):
         conn.close()
         raise HTTPException(status_code=400, detail="Session is closed")
 
-    retake_counts = json.loads(session["retake_counts"] or "{}")
-    current_count = retake_counts.get(slot, 0)
-    if current_count >= 4:
+    prior_uploads = conn.execute(
+        "SELECT COUNT(*) FROM photos WHERE session_token = ? AND slot = ?",
+        (token, slot),
+    ).fetchone()[0]
+
+    if prior_uploads >= 4:
         conn.close()
         raise HTTPException(
-            status_code=400, detail="Maximum retakes exceeded for this slot"
+            status_code=409, detail="Maximum retakes exceeded for this slot"
         )
 
     photo_bytes = await request.body()
@@ -281,7 +277,10 @@ async def upload_photo(request: Request, token: str, slot: str):
     status = "read" if reading is not None else "unchecked"
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    retake_counts[slot] = current_count + 1
+    new_total = prior_uploads + 1
+    retakes_left = max(0, 4 - new_total)
+    retake_counts = json.loads(session["retake_counts"] or "{}")
+    retake_counts[slot] = new_total - 1
 
     with conn:
         conn.execute(
@@ -311,7 +310,7 @@ async def upload_photo(request: Request, token: str, slot: str):
         "slot": slot,
         "sha256": sha256,
         "status": status,
-        "retakes_left": max(0, 3 - current_count),
+        "retakes_left": retakes_left,
     }
 
 
@@ -378,7 +377,7 @@ async def submit_capture(request: Request, token: str):
         claimed_damage_area=claim["claimed_damage_area"],
     )
 
-    findings = run_checks(policy, readings)
+    findings = run_checks(policy, readings, photos=photo_hashes)
     now_iso = datetime.now(timezone.utc).isoformat()
 
     package_data = {
@@ -410,6 +409,10 @@ async def submit_capture(request: Request, token: str):
 
     pkg_bytes, sig_b64 = seal(package_data)
 
+    provider = get_provider()
+    ai_summary_dict = summarize(findings, provider)
+    ai_summary_json = json.dumps(ai_summary_dict)
+
     with conn:
         conn.execute("DELETE FROM findings WHERE claim_id = ?", (claim["id"],))
         for f in findings:
@@ -423,10 +426,10 @@ async def submit_capture(request: Request, token: str):
         conn.execute(
             """
             UPDATE claims
-            SET status = 'ready_for_review', package_bytes = ?, signature = ?
+            SET status = 'ready_for_review', package_bytes = ?, signature = ?, ai_summary = ?
             WHERE id = ?
             """,
-            (pkg_bytes, sig_b64, claim["id"]),
+            (pkg_bytes, sig_b64, ai_summary_json, claim["id"]),
         )
         conn.execute(
             "UPDATE sessions SET status = 'submitted' WHERE token = ?", (token,)
@@ -500,6 +503,16 @@ async def claim_report(request: Request, id: str):
     if claim["package_bytes"] and claim["signature"]:
         is_valid_seal = verify(claim["package_bytes"], claim["signature"])
 
+    ai_summary = None
+    if "ai_summary" in claim.keys() and claim["ai_summary"] is not None:
+        try:
+            ai_summary = json.loads(claim["ai_summary"])
+        except Exception:
+            ai_summary = None
+    elif findings:
+        provider = get_provider()
+        ai_summary = summarize(findings, provider)
+
     return templates.TemplateResponse(
         request=request,
         name="console_claim.html",
@@ -511,6 +524,7 @@ async def claim_report(request: Request, id: str):
             "decisions": decisions,
             "summary_line": summary_line,
             "is_valid_seal": is_valid_seal,
+            "ai_summary": ai_summary,
         },
     )
 

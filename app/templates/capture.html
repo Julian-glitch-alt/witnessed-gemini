@@ -35,7 +35,7 @@
       <div id="camera-error" class="camera-error-message">
         <strong>Camera Unavailable</strong>
         <p style="margin-top: 0.5rem; font-size: 0.85rem;">
-          A live camera is strictly required to capture verified evidence for this claim. Please enable camera access in your browser permissions and refresh the page.
+          A live camera is strictly required to capture photo evidence for this claim. Please enable camera access in your browser permissions and refresh the page.
         </p>
       </div>
     </div>
@@ -203,6 +203,9 @@ btnCapture.addEventListener("click", async () => {
 
       const data = await resp.json();
       photos[slot.id] = data;
+      if (typeof data.retakes_left === "number") {
+        retakeCounts[slot.id] = Math.max(0, 3 - data.retakes_left);
+      }
       btnCapture.disabled = false;
       btnCapture.textContent = "Take Photo";
       updateSlotUI();
@@ -217,7 +220,6 @@ btnCapture.addEventListener("click", async () => {
 btnRetake.addEventListener("click", () => {
   const slot = SLOTS[currentSlotIndex];
   if (retakeCounts[slot.id] >= 3) return;
-  retakeCounts[slot.id] += 1;
   photos[slot.id] = null;
   updateSlotUI();
 });
