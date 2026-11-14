@@ -17,10 +17,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import qrcode
 
-from app.db import get_connection, get_data_dir, init_db
+from app.db import get_connection, get_data_dir, init_db, log_claim_event
 from witnessed.checks import map_parts_to_claimed_area, run_checks
 from witnessed.providers import FakeProvider, get_provider
 from witnessed.schemas import (
+    VALID_PARTS,
     DamageReading,
     Finding,
     PlateReading,
@@ -46,6 +47,7 @@ HUMAN_LABELS: dict[str, str] = {
     "vin_format": "VIN",
     "damage_present": "Damage visible",
     "damage_location": "Damage location",
+    "parts_match": "Parts match",
     "duplicate_photo": "Duplicate photo",
     "photo_reused": "Photo reused",
 }
@@ -501,6 +503,12 @@ async def console_create_claim(
     claim = conn.execute("SELECT * FROM claims WHERE id = ?", (claim_id,)).fetchone()
     conn.close()
 
+    log_claim_event(
+        claim_id,
+        "claim_created",
+        f"Claim created for {claimant_name.strip()} ({color.strip()} {make.strip()} {model.strip()})",
+    )
+
     capture_url = str(request.url_for("capture_page", token=token))
     qr_data_uri = generate_qr_data_uri(capture_url)
 
@@ -546,6 +554,62 @@ async def capture_page(request: Request, token: str):
                 "model": row["model"] if "model" in row.keys() else None,
             }
 
+    log_claim_event(
+        session["claim_id"],
+        "link_opened",
+        f"Capture link opened (session {session['session_code']})",
+    )
+
+    req_slots_json = session["requested_slots"] if "requested_slots" in session.keys() else None
+    requested_slots: list[str] = []
+    if req_slots_json:
+        try:
+            parsed = json.loads(req_slots_json)
+            if isinstance(parsed, list):
+                requested_slots = parsed
+        except Exception:
+            pass
+
+    is_recapture_round = bool(requested_slots)
+    num_requested = len(requested_slots)
+    kept_slots = [s for s in ("plate", "vin", "damage", "wide") if s not in requested_slots]
+    current_round = session["round"] if "round" in session.keys() and session["round"] else 1
+
+    r2_photos = [
+        row for row in photos_rows
+        if ("round" in row.keys() and row["round"] == current_round)
+    ]
+    r2_taken_slots: dict[str, Any] = {}
+    for row in r2_photos:
+        if row["slot"] not in r2_taken_slots:
+            r2_taken_slots[row["slot"]] = row
+
+    new_photos_taken_count = len([s for s in requested_slots if s in r2_taken_slots])
+    is_ready_to_send = (new_photos_taken_count == num_requested) and (num_requested > 0)
+    missing_slots = [s for s in requested_slots if s not in r2_taken_slots]
+
+    SLOT_NAMES_HUMAN = {
+        "plate": "License plate",
+        "vin": "VIN plate",
+        "damage": "Damage close-up",
+        "wide": "The whole vehicle",
+    }
+    missing_slots_str = ", ".join(SLOT_NAMES_HUMAN.get(s, s) for s in missing_slots)
+
+    kept_photos: dict[str, Any] = {}
+    for s in kept_slots:
+        prior_photo = next(
+            (
+                row for row in photos_rows
+                if row["slot"] == s and ("round" not in row.keys() or row["round"] != current_round)
+            ),
+            None,
+        )
+        if not prior_photo:
+            prior_photo = next((row for row in photos_rows if row["slot"] == s), None)
+        if prior_photo:
+            kept_photos[s] = prior_photo
+
     retake_counts = json.loads(session["retake_counts"] or "{}")
     existing_answers = {}
     if claim and "answers_json" in claim.keys() and claim["answers_json"]:
@@ -565,6 +629,17 @@ async def capture_page(request: Request, token: str):
             "existing_photos": existing_photos,
             "existing_answers": existing_answers,
             "retake_counts": retake_counts,
+            "is_recapture_round": is_recapture_round,
+            "requested_slots": requested_slots,
+            "num_requested": num_requested,
+            "kept_slots": kept_slots,
+            "kept_photos": kept_photos,
+            "r2_taken_slots": r2_taken_slots,
+            "new_photos_taken_count": new_photos_taken_count,
+            "is_ready_to_send": is_ready_to_send,
+            "missing_slots": missing_slots,
+            "missing_slots_str": missing_slots_str,
+            "slot_names_human": SLOT_NAMES_HUMAN,
         },
     )
 
@@ -692,6 +767,13 @@ async def save_answers(request: Request, token: str):
             )
     conn.close()
 
+    parts_desc = ", ".join(parts_list) if parts_list else "None"
+    log_claim_event(
+        session["claim_id"],
+        "answers_saved",
+        f"Claimant answers saved: parts listed: {parts_desc}",
+    )
+
     return {
         "ok": True,
         "claimed_damage_area": claimed_area,
@@ -716,10 +798,32 @@ async def upload_photo(request: Request, token: str, slot: str):
         conn.close()
         raise HTTPException(status_code=400, detail="Session is closed")
 
-    prior_uploads = conn.execute(
-        "SELECT COUNT(*) FROM photos WHERE session_token = ? AND slot = ?",
-        (token, slot),
-    ).fetchone()[0]
+    req_slots_json = session["requested_slots"] if "requested_slots" in session.keys() else None
+    current_round = session["round"] if "round" in session.keys() and session["round"] else 1
+    if req_slots_json:
+        try:
+            req_slots = json.loads(req_slots_json)
+            if isinstance(req_slots, list) and slot not in req_slots:
+                conn.close()
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Slot '{slot}' was not requested for recapture.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+    if req_slots_json:
+        prior_uploads = conn.execute(
+            "SELECT COUNT(*) FROM photos WHERE session_token = ? AND slot = ? AND round = ?",
+            (token, slot, current_round),
+        ).fetchone()[0]
+    else:
+        prior_uploads = conn.execute(
+            "SELECT COUNT(*) FROM photos WHERE session_token = ? AND slot = ?",
+            (token, slot),
+        ).fetchone()[0]
 
     if prior_uploads >= 4:
         conn.close()
@@ -781,8 +885,8 @@ async def upload_photo(request: Request, token: str, slot: str):
         conn.execute(
             """
             INSERT INTO photos (
-                session_token, slot, sha256, path, reading_json, status, model, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                session_token, slot, sha256, path, reading_json, status, model, round, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 token,
@@ -792,6 +896,7 @@ async def upload_photo(request: Request, token: str, slot: str):
                 reading_json,
                 status,
                 model_used,
+                current_round,
                 now_iso,
             ),
         )
@@ -800,6 +905,12 @@ async def upload_photo(request: Request, token: str, slot: str):
             (json.dumps(retake_counts), token),
         )
     conn.close()
+
+    log_claim_event(
+        session["claim_id"],
+        "photo_taken",
+        f"Photo taken for slot {slot} using model {model_used}",
+    )
 
     return {
         "ok": True,
@@ -829,17 +940,68 @@ async def submit_capture(request: Request, token: str):
         "SELECT * FROM photos WHERE session_token = ? ORDER BY id DESC", (token,)
     ).fetchall()
 
-    latest_photos: dict[str, Any] = {}
-    for row in photos_rows:
-        if row["slot"] not in latest_photos:
-            latest_photos[row["slot"]] = row
+    req_slots_json = session["requested_slots"] if "requested_slots" in session.keys() else None
+    is_recapture = False
+    requested_slots: list[str] = []
+    if req_slots_json:
+        try:
+            parsed = json.loads(req_slots_json)
+            if isinstance(parsed, list) and parsed:
+                is_recapture = True
+                requested_slots = parsed
+        except Exception:
+            pass
 
-    if not all(slot in latest_photos for slot in VALID_SLOTS):
-        conn.close()
-        raise HTTPException(
-            status_code=400,
-            detail="All four slots (wide, damage, plate, vin) are required before submitting.",
-        )
+    current_round = session["round"] if "round" in session.keys() and session["round"] else (2 if is_recapture else 1)
+
+    latest_photos: dict[str, Any] = {}
+    if is_recapture:
+        r2_photos = [
+            row for row in photos_rows
+            if ("round" in row.keys() and row["round"] == current_round)
+        ]
+        r2_map = {row["slot"]: row for row in r2_photos}
+        for s in requested_slots:
+            if s not in r2_map:
+                s_photo = next((row for row in photos_rows if row["slot"] == s), None)
+                if not s_photo:
+                    conn.close()
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Photos for all requested slots ({', '.join(requested_slots)}) are required before submitting.",
+                    )
+                r2_map[s] = s_photo
+        for slot in VALID_SLOTS:
+            if slot in requested_slots:
+                latest_photos[slot] = r2_map[slot]
+            else:
+                prior_photo = next(
+                    (
+                        row for row in photos_rows
+                        if row["slot"] == slot and ("round" not in row.keys() or row["round"] != current_round)
+                    ),
+                    None,
+                )
+                if not prior_photo:
+                    prior_photo = next((row for row in photos_rows if row["slot"] == slot), None)
+                if not prior_photo:
+                    conn.close()
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Missing photo for slot {slot}.",
+                    )
+                latest_photos[slot] = prior_photo
+    else:
+        for row in photos_rows:
+            if row["slot"] not in latest_photos:
+                latest_photos[row["slot"]] = row
+
+        if not all(slot in latest_photos for slot in VALID_SLOTS):
+            conn.close()
+            raise HTTPException(
+                status_code=400,
+                detail="All four slots (wide, damage, plate, vin) are required before submitting.",
+            )
 
     claim = conn.execute(
         "SELECT * FROM claims WHERE id = ?", (session["claim_id"],)
@@ -848,7 +1010,6 @@ async def submit_capture(request: Request, token: str):
         conn.close()
         raise HTTPException(status_code=404, detail="Claim not found")
 
-    # Read body for submit payload (JSON or form data)
     body_data: dict[str, Any] = {}
     content_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
@@ -865,84 +1026,94 @@ async def submit_capture(request: Request, token: str):
         except Exception:
             body_data = {}
 
-    signer_name = (
-        body_data.get("signer_name")
-        or (claim["claimant_name"] if claim["claimant_name"] else None)
-    )
-    if isinstance(signer_name, str):
-        signer_name = signer_name.strip()
-    if not signer_name:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Signer name is required.")
-
-    confirmed_val = body_data.get("confirmed")
-    if isinstance(confirmed_val, str):
-        confirmed = confirmed_val.lower() in ("true", "1", "yes", "on")
-    else:
-        confirmed = bool(confirmed_val)
-    if not confirmed:
-        conn.close()
-        raise HTTPException(
-            status_code=400,
-            detail="You must confirm the information is true to the best of your knowledge.",
-        )
-
-    signature_data = body_data.get("signature")
-    if not signature_data or not isinstance(signature_data, str) or not signature_data.strip():
-        conn.close()
-        raise HTTPException(status_code=400, detail="Signature is required before submitting.")
-
-    signature_str = signature_data.strip()
-    if not signature_str.startswith("data:image/png;base64,"):
-        conn.close()
-        raise HTTPException(status_code=400, detail="Signature must be a PNG data URL.")
-
-    # Size limit: 300 KB
-    if len(signature_str.encode("utf-8")) > 300 * 1024:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Signature image exceeds 300 KB limit.")
-
-    try:
-        sig_b64_part = signature_str.split(",", 1)[1]
-        sig_bytes = base64.b64decode(sig_b64_part)
-    except Exception:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Invalid signature base64 data.")
-
-    if len(sig_bytes) > 300 * 1024:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Signature image exceeds 300 KB limit.")
-
-    sig_sha256 = hashlib.sha256(sig_bytes).hexdigest()
-
-    # Answers check
-    answers_dict: dict[str, Any] = {}
-    if "answers_json" in claim.keys() and claim["answers_json"]:
-        try:
-            answers_dict = json.loads(claim["answers_json"])
-        except Exception:
-            answers_dict = {}
-    if "answers" in body_data and isinstance(body_data["answers"], dict):
-        body_answers = dict(body_data["answers"])
-        if "other-vehicle" in body_answers and "other_vehicle" not in body_answers:
-            body_answers["other_vehicle"] = body_answers["other-vehicle"]
-        for k, v in body_answers.items():
-            if v is not None:
-                answers_dict[k] = v
-    elif not answers_dict and claim["claimant_statement"]:
-        answers_dict = {
-            "statement": claim["claimant_statement"],
-            "parts": [claim["claimed_damage_area"]] if claim["claimed_damage_area"] else [],
-        }
-
-    if not answers_dict:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Answers are required before submitting.")
-
-    if "parts" in answers_dict and isinstance(answers_dict["parts"], list):
-        claimed_area = map_parts_to_claimed_area([str(p) for p in answers_dict["parts"]])
-    else:
+    if is_recapture:
+        signer_name = claim["signer_name"] or claim["claimant_name"] or "Claimant"
+        signature_str = claim["signature_image"] or ""
+        sig_sha256 = claim["signature"][:32] if claim["signature"] else ""
+        answers_dict: dict[str, Any] = {}
+        if "answers_json" in claim.keys() and claim["answers_json"]:
+            try:
+                answers_dict = json.loads(claim["answers_json"])
+            except Exception:
+                answers_dict = {}
         claimed_area = claim["claimed_damage_area"]
+    else:
+        signer_name = (
+            body_data.get("signer_name")
+            or (claim["claimant_name"] if claim["claimant_name"] else None)
+        )
+        if isinstance(signer_name, str):
+            signer_name = signer_name.strip()
+        if not signer_name:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Signer name is required.")
+
+        confirmed_val = body_data.get("confirmed")
+        if isinstance(confirmed_val, str):
+            confirmed = confirmed_val.lower() in ("true", "1", "yes", "on")
+        else:
+            confirmed = bool(confirmed_val)
+        if not confirmed:
+            conn.close()
+            raise HTTPException(
+                status_code=400,
+                detail="You must confirm the information is true to the best of your knowledge.",
+            )
+
+        signature_data = body_data.get("signature")
+        if not signature_data or not isinstance(signature_data, str) or not signature_data.strip():
+            conn.close()
+            raise HTTPException(status_code=400, detail="Signature is required before submitting.")
+
+        signature_str = signature_data.strip()
+        if not signature_str.startswith("data:image/png;base64,"):
+            conn.close()
+            raise HTTPException(status_code=400, detail="Signature must be a PNG data URL.")
+
+        if len(signature_str.encode("utf-8")) > 300 * 1024:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Signature image exceeds 300 KB limit.")
+
+        try:
+            sig_b64_part = signature_str.split(",", 1)[1]
+            sig_bytes = base64.b64decode(sig_b64_part)
+        except Exception:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Invalid signature base64 data.")
+
+        if len(sig_bytes) > 300 * 1024:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Signature image exceeds 300 KB limit.")
+
+        sig_sha256 = hashlib.sha256(sig_bytes).hexdigest()
+
+        answers_dict: dict[str, Any] = {}
+        if "answers_json" in claim.keys() and claim["answers_json"]:
+            try:
+                answers_dict = json.loads(claim["answers_json"])
+            except Exception:
+                answers_dict = {}
+        if "answers" in body_data and isinstance(body_data["answers"], dict):
+            body_answers = dict(body_data["answers"])
+            if "other-vehicle" in body_answers and "other_vehicle" not in body_answers:
+                body_answers["other_vehicle"] = body_answers["other-vehicle"]
+            for k, v in body_answers.items():
+                if v is not None:
+                    answers_dict[k] = v
+        elif not answers_dict and claim["claimant_statement"]:
+            answers_dict = {
+                "statement": claim["claimant_statement"],
+                "parts": [claim["claimed_damage_area"]] if claim["claimed_damage_area"] else [],
+            }
+
+        if not answers_dict:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Answers are required before submitting.")
+
+        if "parts" in answers_dict and isinstance(answers_dict["parts"], list):
+            claimed_area = map_parts_to_claimed_area([str(p) for p in answers_dict["parts"]])
+        else:
+            claimed_area = claim["claimed_damage_area"]
 
     # Reconstruct readings
     readings: dict[str, Any] = {}
@@ -959,6 +1130,12 @@ async def submit_capture(request: Request, token: str):
         else:
             readings[slot] = None
 
+    claimed_parts_list = []
+    if "parts" in answers_dict and isinstance(answers_dict["parts"], list):
+        claimed_parts_list = [str(p) for p in answers_dict["parts"] if p]
+    elif claim["claimed_damage_area"]:
+        claimed_parts_list = [claim["claimed_damage_area"]]
+
     policy = Policy(
         make=claim["make"],
         model=claim["model"],
@@ -968,6 +1145,7 @@ async def submit_capture(request: Request, token: str):
         claimant_name=claim["claimant_name"],
         claimant_statement=claim["claimant_statement"],
         claimed_damage_area=claimed_area,
+        claimed_parts=claimed_parts_list,
     )
 
     reused_photos: dict[str, str] = {}
@@ -1041,6 +1219,10 @@ async def submit_capture(request: Request, token: str):
         },
     }
 
+    if is_recapture:
+        package_data["version"] = 2
+        package_data["previous_signature"] = claim["signature"]
+
     pkg_bytes, sig_b64 = seal(package_data)
 
     ai_summary_dict = None
@@ -1063,41 +1245,95 @@ async def submit_capture(request: Request, token: str):
                 """,
                 (claim["id"], f.check, f.status, f.reason),
             )
-        conn.execute(
-            """
-            UPDATE claims
-            SET status = 'ready_for_review',
-                package_bytes = ?,
-                signature = ?,
-                ai_summary = ?,
-                signer_name = ?,
-                signature_image = ?,
-                signed_at = ?,
-                answers_json = ?,
-                claimed_damage_area = ?
-            WHERE id = ?
-            """,
-            (
-                pkg_bytes,
-                sig_b64,
-                ai_summary_json,
-                signer_name,
-                signature_str,
-                now_iso,
-                json.dumps(answers_dict),
-                claimed_area,
-                claim["id"],
-            ),
-        )
-        conn.execute(
-            "UPDATE sessions SET status = 'submitted' WHERE token = ?", (token,)
-        )
+        if is_recapture:
+            conn.execute(
+                """
+                UPDATE claims
+                SET status = 'ready_for_review',
+                    package_bytes = ?,
+                    signature = ?,
+                    previous_signature = ?,
+                    version = 2,
+                    round = 2,
+                    ai_summary = ?
+                WHERE id = ?
+                """,
+                (
+                    pkg_bytes,
+                    sig_b64,
+                    claim["signature"],
+                    ai_summary_json,
+                    claim["id"],
+                ),
+            )
+            conn.execute(
+                "UPDATE sessions SET status = 'submitted', requested_slots = NULL WHERE token = ?",
+                (token,),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE claims
+                SET status = 'ready_for_review',
+                    package_bytes = ?,
+                    signature = ?,
+                    ai_summary = ?,
+                    signer_name = ?,
+                    signature_image = ?,
+                    signed_at = ?,
+                    answers_json = ?,
+                    claimed_damage_area = ?
+                WHERE id = ?
+                """,
+                (
+                    pkg_bytes,
+                    sig_b64,
+                    ai_summary_json,
+                    signer_name,
+                    signature_str,
+                    now_iso,
+                    json.dumps(answers_dict),
+                    claimed_area,
+                    claim["id"],
+                ),
+            )
+            conn.execute(
+                "UPDATE sessions SET status = 'submitted' WHERE token = ?", (token,)
+            )
     conn.close()
+
+    if is_recapture:
+        log_claim_event(
+            claim["id"],
+            "round_2_sent",
+            f"Round 2 photos submitted for slots: {', '.join(requested_slots)}",
+        )
+        log_claim_event(
+            claim["id"],
+            "sealed",
+            "Package sealed with Ed25519 signature (version 2)",
+        )
+    else:
+        log_claim_event(
+            claim["id"],
+            "submitted",
+            f"Claim evidence submitted by {signer_name}",
+        )
+        log_claim_event(
+            claim["id"],
+            "sealed",
+            "Package sealed with Ed25519 signature (version 1)",
+        )
 
     accept_header = request.headers.get("accept", "")
     if "application/json" in accept_header:
         return {"ok": True, "redirect": f"/c/{token}/complete"}
     return RedirectResponse(url=f"/c/{token}/complete", status_code=303)
+
+
+@app.post("/c/{token}/recapture/send")
+async def recapture_send(request: Request, token: str):
+    return await submit_capture(request, token)
 
 
 @app.get("/c/{token}/complete", response_class=HTMLResponse)
@@ -1183,6 +1419,13 @@ async def claim_report(request: Request, id: str):
             if row:
                 reused_slots.add(s)
 
+    claim_notes = conn.execute(
+        "SELECT * FROM claim_notes WHERE claim_id = ? ORDER BY id DESC", (id,)
+    ).fetchall()
+    timeline_events = conn.execute(
+        "SELECT * FROM claim_events WHERE claim_id = ? ORDER BY id ASC", (id,)
+    ).fetchall()
+
     conn.close()
 
     queue_ids = [r["id"] for r in queue_rows]
@@ -1231,7 +1474,7 @@ async def claim_report(request: Request, id: str):
         {
             "id": "damage",
             "name": "Damage",
-            "checks": ["damage_present", "damage_location"],
+            "checks": ["damage_present", "damage_location", "parts_match"],
         },
         {
             "id": "photo_integrity",
@@ -1425,6 +1668,35 @@ async def claim_report(request: Request, id: str):
 
     sig_short = claim["signature"][:8] if claim["signature"] else ""
 
+    seen_parts: list[str] = []
+    for s in ("wide", "damage"):
+        p_row = photos.get(s)
+        if p_row and p_row["reading_json"]:
+            try:
+                r_data = json.loads(p_row["reading_json"])
+                for part in r_data.get("parts_seen") or []:
+                    if part in VALID_PARTS and part not in seen_parts:
+                        seen_parts.append(part)
+            except Exception:
+                pass
+
+    listed_parts: list[str] = []
+    if answers and "parts" in answers and isinstance(answers["parts"], list):
+        for part in answers["parts"]:
+            if part and str(part) not in listed_parts:
+                listed_parts.append(str(part))
+    elif claim["claimed_damage_area"]:
+        listed_parts.append(claim["claimed_damage_area"].capitalize())
+
+    seen_parts_str = ", ".join(seen_parts) if seen_parts else "None"
+    listed_parts_str = ", ".join(listed_parts) if listed_parts else "None"
+
+    is_round_2 = (
+        ("version" in claim.keys() and (claim["version"] or 1) >= 2)
+        or ("round" in claim.keys() and (claim["round"] or 1) >= 2)
+        or ("previous_signature" in claim.keys() and bool(claim["previous_signature"]))
+    )
+
     return templates.TemplateResponse(
         request=request,
         name="console_claim.html",
@@ -1456,6 +1728,13 @@ async def claim_report(request: Request, id: str):
             "needs_decision_count": needs_decision_count,
             "active_nav": "claim",
             "human_labels": HUMAN_LABELS,
+            "seen_parts": seen_parts,
+            "listed_parts": listed_parts,
+            "seen_parts_str": seen_parts_str,
+            "listed_parts_str": listed_parts_str,
+            "claim_notes": claim_notes,
+            "timeline_events": timeline_events,
+            "is_round_2": is_round_2,
         },
     )
 
@@ -1495,6 +1774,12 @@ async def label_finding(
         )
     conn.close()
 
+    log_claim_event(
+        id,
+        "finding_label",
+        f"Finding {check} labeled as {clean_label}",
+    )
+
     accept_header = request.headers.get("accept", "")
     if "application/json" in accept_header or request.headers.get("x-requested-with") == "XMLHttpRequest":
         return {"ok": True, "claim_id": id, "check": check, "label": clean_label}
@@ -1525,13 +1810,54 @@ async def download_package(id: str):
 
 @app.post("/console/claims/{id}/decision")
 async def make_decision(
-    id: str, action: str = Form(...), note: str | None = Form(None)
+    request: Request,
+    id: str,
+    action: str | None = Form(None),
+    note: str | None = Form(None),
+    slots: list[str] | None = Form(None),
+    reason: str | None = Form(None),
 ):
-    action_clean = action.strip().lower()
-    if action_clean not in {"approve", "recapture", "escalate"}:
+    action_val = action
+    note_val = note
+    slots_val = slots
+    if request.headers.get("content-type", "").startswith("application/json"):
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                action_val = body.get("action") or action_val
+                note_val = body.get("note") or body.get("reason") or note_val
+                slots_val = body.get("slots") or slots_val
+        except Exception:
+            pass
+    else:
+        try:
+            form = await request.form()
+            if not action_val:
+                action_val = form.get("action")
+            if not note_val:
+                note_val = form.get("note") or form.get("reason")
+            slots_list = form.getlist("slots")
+            if slots_list:
+                slots_val = slots_list
+        except Exception:
+            pass
+
+    if not action_val:
+        raise HTTPException(status_code=400, detail="Action is required.")
+
+    action_clean = action_val.strip().lower()
+    allowed_actions = {
+        "approve",
+        "edit_and_approve",
+        "recapture",
+        "escalate",
+        "refer_to_siu",
+        "field_inspection",
+    }
+    if action_clean not in allowed_actions:
         raise HTTPException(
             status_code=400,
-            detail="Invalid action. Allowed actions are: approve, recapture, escalate.",
+            detail=f"Invalid action: {action_clean}. Allowed actions: {', '.join(sorted(allowed_actions))}.",
         )
 
     conn = get_connection()
@@ -1542,11 +1868,54 @@ async def make_decision(
 
     status_map = {
         "approve": "approved",
+        "edit_and_approve": "approved",
         "recapture": "recapture_requested",
         "escalate": "escalated_to_siu",
+        "refer_to_siu": "escalated_to_siu",
+        "field_inspection": "field_inspection",
     }
     new_status = status_map[action_clean]
     now_iso = datetime.now(timezone.utc).isoformat()
+    clean_note = note_val.strip() if note_val and isinstance(note_val, str) and note_val.strip() else None
+
+    if action_clean == "recapture":
+        valid_selected = []
+        if slots_val:
+            if isinstance(slots_val, str):
+                slots_val = [slots_val]
+            valid_selected = [s for s in slots_val if s in VALID_SLOTS]
+        if not valid_selected:
+            valid_selected = list(VALID_SLOTS)
+
+        session = conn.execute(
+            "SELECT * FROM sessions WHERE claim_id = ? ORDER BY created_at DESC", (id,)
+        ).fetchone()
+        if session:
+            retake_counts = json.loads(session["retake_counts"] or "{}")
+            for s in valid_selected:
+                retake_counts[s] = 0
+            new_round = (session["round"] if "round" in session.keys() and session["round"] else 1) + 1
+            with conn:
+                conn.execute(
+                    """
+                    UPDATE sessions
+                    SET status = 'open',
+                        requested_slots = ?,
+                        retake_counts = ?,
+                        round = ?
+                    WHERE token = ?
+                    """,
+                    (json.dumps(valid_selected), json.dumps(retake_counts), new_round, session["token"]),
+                )
+                conn.execute(
+                    "UPDATE claims SET round = ? WHERE id = ?",
+                    (new_round, id),
+                )
+            log_claim_event(
+                id,
+                "recapture_requested",
+                f"Recapture requested for slots: {', '.join(valid_selected)}. Reason: {clean_note or 'None'}",
+            )
 
     with conn:
         conn.execute(
@@ -1554,14 +1923,101 @@ async def make_decision(
             INSERT INTO decisions (claim_id, action, note, timestamp)
             VALUES (?, ?, ?, ?)
             """,
-            (id, action_clean, note.strip() if note else None, now_iso),
+            (id, action_clean, clean_note, now_iso),
         )
         conn.execute(
             "UPDATE claims SET status = ? WHERE id = ?", (new_status, id)
         )
     conn.close()
 
+    if action_clean != "recapture":
+        log_claim_event(
+            id,
+            "decision",
+            f"Decision: {action_clean}. Note: {clean_note or 'None'}",
+        )
+
+    accept_header = request.headers.get("accept", "")
+    if "application/json" in accept_header or request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return {"ok": True, "action": action_clean, "status": new_status, "note": clean_note}
+
     return RedirectResponse(url=f"/console/claims/{id}", status_code=303)
+
+
+@app.post("/console/claims/{id}/recapture")
+async def request_recapture(
+    request: Request,
+    id: str,
+    slots: list[str] | None = Form(None),
+    reason: str | None = Form(None),
+    note: str | None = Form(None),
+):
+    return await make_decision(
+        request=request,
+        id=id,
+        action="recapture",
+        note=reason or note,
+        slots=slots,
+        reason=reason,
+    )
+
+
+@app.post("/console/claims/{id}/notes")
+async def add_claim_note(
+    request: Request,
+    id: str,
+    note: str | None = Form(None),
+):
+    note_val = note
+    if request.headers.get("content-type", "").startswith("application/json"):
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                note_val = body.get("note") or note_val
+        except Exception:
+            pass
+
+    clean_note = (note_val or "").strip()
+    if not clean_note:
+        raise HTTPException(status_code=400, detail="Note cannot be empty.")
+
+    conn = get_connection()
+    claim = conn.execute("SELECT id FROM claims WHERE id = ?", (id,)).fetchone()
+    if not claim:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO claim_notes (claim_id, author, note, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (id, "Adjuster", clean_note, now_iso),
+        )
+    conn.close()
+
+    log_claim_event(id, "note", clean_note)
+
+    accept_header = request.headers.get("accept", "")
+    if "application/json" in accept_header or request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return {"ok": True, "note": clean_note, "created_at": now_iso}
+    return RedirectResponse(url=f"/console/claims/{id}", status_code=303)
+
+
+@app.get("/console/claims/{id}/timeline")
+async def get_claim_timeline(id: str):
+    conn = get_connection()
+    claim = conn.execute("SELECT id FROM claims WHERE id = ?", (id,)).fetchone()
+    if not claim:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Claim not found")
+    events = conn.execute(
+        "SELECT * FROM claim_events WHERE claim_id = ? ORDER BY id ASC", (id,)
+    ).fetchall()
+    conn.close()
+    return {"events": [dict(e) for e in events]}
 
 
 @app.get("/verify", response_class=HTMLResponse)

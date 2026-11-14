@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import json
 import os
 import sqlite3
@@ -88,6 +89,22 @@ def init_db() -> None:
             note TEXT,
             timestamp TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS claim_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            claim_id TEXT NOT NULL REFERENCES claims(id),
+            author TEXT,
+            note TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS claim_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            claim_id TEXT NOT NULL REFERENCES claims(id),
+            event_type TEXT NOT NULL,
+            detail TEXT,
+            created_at TEXT NOT NULL
+        );
         """)
         try:
             conn.execute("ALTER TABLE claims ADD COLUMN ai_summary TEXT;")
@@ -95,6 +112,10 @@ def init_db() -> None:
             pass
         try:
             conn.execute("ALTER TABLE photos ADD COLUMN model TEXT;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE photos ADD COLUMN round INTEGER DEFAULT 1;")
         except Exception:
             pass
         try:
@@ -117,4 +138,38 @@ def init_db() -> None:
             conn.execute("ALTER TABLE claims ADD COLUMN signed_at TEXT;")
         except Exception:
             pass
+        try:
+            conn.execute("ALTER TABLE sessions ADD COLUMN requested_slots TEXT;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE sessions ADD COLUMN round INTEGER DEFAULT 1;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE claims ADD COLUMN round INTEGER DEFAULT 1;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE claims ADD COLUMN previous_signature TEXT;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE claims ADD COLUMN version INTEGER DEFAULT 1;")
+        except Exception:
+            pass
+    conn.close()
+
+
+def log_claim_event(claim_id: str, event_type: str, detail: str | None = None) -> None:
+    now_iso = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO claim_events (claim_id, event_type, detail, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (claim_id, event_type, detail, now_iso),
+        )
     conn.close()

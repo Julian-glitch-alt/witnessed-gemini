@@ -12,6 +12,171 @@
 </head>
 <body class="capture-flow-body">
 
+{% if is_recapture_round %}
+  <div class="r2-container">
+    <header class="r2-header">
+      <div class="r2-header-top">
+        <div class="r2-brand-left">
+          <div class="flow-logo-d">D</div>
+          <div class="flow-brand-name">Demo Mutual Insurance</div>
+        </div>
+        <div class="flow-claim-id-mono">{{ claim.id }}</div>
+      </div>
+      <div class="r2-subline">More photos</div>
+    </header>
+
+    <!-- Amber Banner Card -->
+    <div class="r2-banner-card">
+      <div class="r2-banner-title">
+        Your insurer asked for {{ num_requested }} more photo{% if num_requested > 1 %}s{% endif %}
+      </div>
+      <div class="r2-banner-subtitle">
+        Take it below, then send. Your answers and other photos stay as you sent them.
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div class="r2-progress-wrap">
+      <div class="r2-progress-label" id="r2-progress-label">
+        {{ new_photos_taken_count }} of {{ num_requested }} new photo{% if num_requested > 1 %}s{% endif %} taken
+      </div>
+      <div class="r2-progress-track">
+        <div class="r2-progress-fill" id="r2-progress-fill" style="width: {{ (new_photos_taken_count / num_requested * 100) if num_requested > 0 else 0 }}%;"></div>
+      </div>
+    </div>
+
+    <!-- Requested Cards -->
+    <div class="r2-requested-cards-wrap">
+      {% for slot in requested_slots %}
+        {% set slot_num = loop.index %}
+        {% set p = r2_taken_slots.get(slot) %}
+        <div class="r2-slot-card" id="r2-card-{{ slot }}">
+          <div class="r2-card-top-row">
+            <div class="r2-card-num">{{ slot_num }}</div>
+            <div class="r2-card-title">
+              <span>{{ slot_names_human.get(slot, slot) }}</span>
+              <span class="pill-next" id="r2-badge-{{ slot }}">{% if p %}DONE{% else %}NEXT{% endif %}</span>
+            </div>
+          </div>
+          <div class="r2-card-hint">
+            {% if slot == 'wide' %}Step back so the whole vehicle is in the photo.
+            {% elif slot == 'damage' %}Get close to the damage. Put a coin next to it for scale.
+            {% elif slot == 'plate' %}Photograph the license plate so every character is readable.
+            {% elif slot == 'vin' %}Photograph the VIN at the bottom of the windshield or on the driver's door frame.
+            {% endif %}
+          </div>
+          <span class="pill-requested-again">Requested again</span>
+
+          <div class="r2-action-area" id="r2-action-{{ slot }}">
+            {% if p and p.sha256 %}
+              <div class="r2-photo-preview" style="display: flex; align-items: center; gap: 12px; margin-top: 10px;">
+                <img src="/photos/{{ p.sha256 }}" alt="{{ slot }}" style="width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid #cbd5e1;">
+                <div>
+                  <div style="font-size: 13px; font-weight: 600; color: #0f6b52; margin-bottom: 4px;">✓ Photo taken</div>
+                  <button type="button" class="btn-retake-link" style="background: none; border: none; color: #2563eb; font-size: 13px; font-weight: 600; cursor: pointer; padding: 0;" onclick="openCamera('{{ slot }}')">Retake</button>
+                </div>
+              </div>
+            {% else %}
+              <button type="button" class="btn-r2-take" onclick="openCamera('{{ slot }}')">Take photo</button>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <!-- Kept As You Sent Them -->
+    {% if kept_slots and kept_photos %}
+      <div class="r2-kept-card">
+        <div class="r2-kept-title">Kept as you sent them</div>
+        <div class="r2-kept-strip">
+          {% for slot in kept_slots %}
+            {% set p = kept_photos.get(slot) %}
+            {% if p and p.sha256 %}
+              <img src="/photos/{{ p.sha256 }}" alt="{{ slot }}" class="r2-kept-img">
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- Your answers, as you sent them -->
+    <h2 class="r2-answers-heading">Your answers, as you sent them</h2>
+
+    <!-- Answers Card 1: What happened -->
+    <div class="r2-answer-card">
+      <div class="r2-answer-card-title">What happened</div>
+      <div class="r2-answer-row">
+        <span class="r2-answer-lbl">What day did it happen?</span>
+        <span class="r2-answer-val">{{ existing_answers.date or claim.created_at[:10] }}</span>
+      </div>
+      <div class="r2-answer-row">
+        <span class="r2-answer-lbl">City</span>
+        <span class="r2-answer-val">{{ existing_answers.city or "Not given" }}</span>
+      </div>
+      <div class="r2-answer-row">
+        <span class="r2-answer-lbl">State</span>
+        <span class="r2-answer-val">{{ existing_answers.state or claim.state or "Not given" }}</span>
+      </div>
+      <div class="r2-answer-row">
+        <span class="r2-answer-lbl">What happened, in your own words?</span>
+        <span class="r2-answer-val">{{ existing_answers.statement or claim.claimant_statement or "Not given" }}</span>
+      </div>
+    </div>
+
+    <!-- Answers Card 2: Damage -->
+    <div class="r2-answer-card">
+      <div class="r2-answer-card-title">Damage</div>
+      <div class="r2-answer-row">
+        <span class="r2-answer-lbl">Where is your car damaged?</span>
+        <span class="r2-answer-val">
+          {% if existing_answers.parts %}
+            {{ existing_answers.parts | join(", ") }}
+          {% elif claim.claimed_damage_area %}
+            {{ claim.claimed_damage_area | capitalize }}
+          {% else %}
+            Not given
+          {% endif %}
+        </span>
+      </div>
+      <div class="r2-answer-row">
+        <span class="r2-answer-lbl">Was any of this damage there before?</span>
+        <span class="r2-answer-val">No</span>
+      </div>
+    </div>
+
+    <!-- Answers Card 3: Your vehicle -->
+    <div class="r2-answer-card">
+      <div class="r2-answer-card-title">Your vehicle</div>
+      <div class="r2-answer-row">
+        <span class="r2-answer-lbl">Make & Model</span>
+        <span class="r2-answer-val">{{ claim.make }} {{ claim.model }}</span>
+      </div>
+      <div class="r2-answer-row">
+        <span class="r2-answer-lbl">VIN</span>
+        <span class="r2-answer-val">{{ claim.plate or claim.id }}</span>
+      </div>
+      <div class="r2-answer-row">
+        <span class="r2-answer-lbl">Can you drive it?</span>
+        <span class="r2-answer-val">{{ existing_answers.drivable or "Yes" }}</span>
+      </div>
+    </div>
+
+    <!-- Bottom send button & notes -->
+    <div class="r2-bottom-bar">
+      <div class="r2-still-needed-text" id="r2-still-needed-text">
+        {% if is_ready_to_send %}All photos taken{% else %}Still needed: {{ missing_slots_str }}{% endif %}
+      </div>
+      <button type="button" id="btn-r2-send" class="btn-r2-send {% if is_ready_to_send %}ready{% endif %}" onclick="sendRecapturePhotos()" {% if not is_ready_to_send %}disabled{% endif %}>
+        Send the new photo{% if num_requested > 1 %}s{% endif %}
+      </button>
+      <div style="font-size: 0.74rem; color: #64748b; margin-top: 12px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+        <span>🔒</span>
+        <span>Secure link from Demo Mutual Insurance. Photos are sealed when they arrive.</span>
+      </div>
+    </div>
+  </div>
+{% else %}
+
   <!-- Header -->
   <header class="flow-header" id="flow-header">
     <div class="flow-header-inner">
@@ -547,6 +712,7 @@
       <span>Secure link from Demo Mutual Insurance. Photos are sealed when they arrive.</span>
     </div>
   </div>
+{% endif %}
 
   <!-- Fullscreen Live Camera Modal (getUserMedia) -->
   <div id="camera-modal" class="camera-modal-overlay">
@@ -599,6 +765,15 @@ const TOKEN = "{{ token }}";
 const CLAIM_ID = "{{ claim.id }}";
 const SESSION_CODE = "{{ session_code }}";
 const INITIAL_STATUS = "{{ session_status }}";
+const IS_RECAPTURE = {{ "true" if is_recapture_round else "false" }};
+const R2_REQUESTED_SLOTS = {{ requested_slots | tojson if is_recapture_round else "[]" }};
+let r2TakenSlots = {};
+{% if r2_taken_slots %}
+try {
+  const srvR2 = {{ r2_taken_slots | tojson }};
+  Object.assign(r2TakenSlots, srvR2);
+} catch(e){}
+{% endif %}
 
 const STEP_TITLES = [
   "What happened to your car?",
@@ -1092,15 +1267,30 @@ async function usePhotoFromCamera() {
   const blob = currentCapturedBlob;
   closeCamera();
 
-  // Show Checking… on the card
-  const action = document.getElementById(`action-slot-${slot}`);
-  action.innerHTML = `
-    <div class="photo-preview-result">
-      <div class="status-checking">
-        <span class="spinner-sm"></span> Checking…
-      </div>
-    </div>
-  `;
+  if (IS_RECAPTURE) {
+    const action = document.getElementById(`r2-action-${slot}`);
+    if (action) {
+      action.innerHTML = `
+        <div class="photo-preview-result">
+          <div class="status-checking">
+            <span class="spinner-sm"></span> Checking…
+          </div>
+        </div>
+      `;
+    }
+  } else {
+    // Show Checking… on the card
+    const action = document.getElementById(`action-slot-${slot}`);
+    if (action) {
+      action.innerHTML = `
+        <div class="photo-preview-result">
+          <div class="status-checking">
+            <span class="spinner-sm"></span> Checking…
+          </div>
+        </div>
+      `;
+    }
+  }
 
   try {
     const resp = await fetch(`/c/${TOKEN}/photo/${slot}`, {
@@ -1112,19 +1302,121 @@ async function usePhotoFromCamera() {
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
       alert(err.detail || "Upload failed");
-      updatePhotosUI();
+      if (IS_RECAPTURE) updateRecaptureUI(); else updatePhotosUI();
       return;
     }
 
     const data = await resp.json();
-    photos[slot] = data;
-    if (typeof data.retakes_left === 'number') {
-      retakeCounts[slot] = Math.max(0, 3 - data.retakes_left);
+    if (IS_RECAPTURE) {
+      r2TakenSlots[slot] = data;
+      updateRecaptureUI();
+    } else {
+      photos[slot] = data;
+      if (typeof data.retakes_left === 'number') {
+        retakeCounts[slot] = Math.max(0, 3 - data.retakes_left);
+      }
+      updatePhotosUI();
     }
-    updatePhotosUI();
   } catch(e) {
     alert("Network error uploading photo.");
-    updatePhotosUI();
+    if (IS_RECAPTURE) updateRecaptureUI(); else updatePhotosUI();
+  }
+}
+
+function updateRecaptureUI() {
+  const numRequested = R2_REQUESTED_SLOTS.length;
+  let takenCount = 0;
+  let missing = [];
+
+  R2_REQUESTED_SLOTS.forEach((slot) => {
+    const p = r2TakenSlots[slot];
+    const cardAction = document.getElementById(`r2-action-${slot}`);
+    const cardBadge = document.getElementById(`r2-badge-${slot}`);
+    if (p && p.sha256) {
+      takenCount++;
+      if (cardBadge) cardBadge.textContent = 'DONE';
+      if (cardAction) {
+        cardAction.innerHTML = `
+          <div class="r2-photo-preview" style="display: flex; align-items: center; gap: 12px; margin-top: 10px;">
+            <img src="/photos/${p.sha256}" alt="${slot}" style="width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid #cbd5e1;">
+            <div>
+              <div style="font-size: 13px; font-weight: 600; color: #0f6b52; margin-bottom: 4px;">✓ Photo taken</div>
+              <button type="button" class="btn-retake-link" style="background: none; border: none; color: #2563eb; font-size: 13px; font-weight: 600; cursor: pointer; padding: 0;" onclick="openCamera('${slot}')">Retake</button>
+            </div>
+          </div>
+        `;
+      }
+    } else {
+      missing.push(SLOT_CONFIGS[slot] ? SLOT_CONFIGS[slot].title : slot);
+      if (cardBadge) cardBadge.textContent = 'NEXT';
+      if (cardAction) {
+        cardAction.innerHTML = `
+          <button type="button" class="btn-r2-take" onclick="openCamera('${slot}')">Take photo</button>
+        `;
+      }
+    }
+  });
+
+  const progLabel = document.getElementById('r2-progress-label');
+  if (progLabel) {
+    const sStr = numRequested === 1 ? 'photo' : 'photos';
+    progLabel.textContent = `${takenCount} of ${numRequested} new ${sStr} taken`;
+  }
+  const progFill = document.getElementById('r2-progress-fill');
+  if (progFill) {
+    const pct = numRequested > 0 ? (takenCount / numRequested) * 100 : 0;
+    progFill.style.width = pct + '%';
+  }
+
+  const neededText = document.getElementById('r2-still-needed-text');
+  const sendBtn = document.getElementById('btn-r2-send');
+  if (takenCount === numRequested && numRequested > 0) {
+    if (neededText) neededText.textContent = 'All photos taken';
+    if (sendBtn) {
+      sendBtn.disabled = false;
+      sendBtn.classList.add('ready');
+    }
+  } else {
+    if (neededText) neededText.textContent = 'Still needed: ' + missing.join(', ');
+    if (sendBtn) {
+      sendBtn.disabled = true;
+      sendBtn.classList.remove('ready');
+    }
+  }
+}
+
+async function sendRecapturePhotos() {
+  const sendBtn = document.getElementById('btn-r2-send');
+  if (sendBtn) {
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Sending...';
+  }
+  try {
+    const resp = await fetch(`/c/${TOKEN}/recapture/send`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({})
+    });
+    if (resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      window.location.href = data.redirect || `/c/${TOKEN}/complete`;
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      alert(err.detail || 'Failed to send new photos.');
+      if (sendBtn) {
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send the new photo' + (R2_REQUESTED_SLOTS.length > 1 ? 's' : '');
+      }
+    }
+  } catch(e) {
+    alert('Network error sending new photos.');
+    if (sendBtn) {
+      sendBtn.disabled = false;
+      sendBtn.textContent = 'Send the new photo' + (R2_REQUESTED_SLOTS.length > 1 ? 's' : '');
+    }
   }
 }
 
@@ -1310,6 +1602,11 @@ async function submitClaim() {
 
 // Initial Boot
 window.addEventListener('DOMContentLoaded', () => {
+  if (IS_RECAPTURE) {
+    updateRecaptureUI();
+    return;
+  }
+
   if (INITIAL_STATUS === 'submitted') {
     currentStep = 7;
     updateFlowUI();

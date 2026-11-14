@@ -188,6 +188,7 @@ def seed() -> list[str]:
                 color="Blue",
                 damage_visible=True,
                 damage_area="front",
+                parts_seen=["Front bumper", "Hood"],
             ),
         )
         provider_c.set_reading(
@@ -197,6 +198,7 @@ def seed() -> list[str]:
                 damage_type="crush",
                 damage_area="front",
                 severity="moderate",
+                parts_seen=["Front bumper", "Hood"],
             ),
         )
         app_main.get_provider = lambda: provider_c

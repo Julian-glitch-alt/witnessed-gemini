@@ -21,6 +21,7 @@ def clean_policy():
         claimant_name="Jane Doe",
         claimant_statement="I was rear-ended at a red light.",
         claimed_damage_area="rear",
+        claimed_parts=["Rear bumper"],
     )
 
 
@@ -33,12 +34,14 @@ def clean_readings():
             color="Blue",
             damage_visible=True,
             damage_area="rear",
+            parts_seen=["Rear bumper"],
         ),
         "damage": DamageReading(
             damage_visible=True,
             damage_type="crush",
             damage_area="rear",
             severity="moderate",
+            parts_seen=["Rear bumper"],
         ),
         "plate": PlateReading(
             plate_text="7XYZ123",
@@ -223,7 +226,7 @@ def test_vin_format_paths(clean_policy, clean_readings):
 def test_all_missing_readings_give_all_unchecked(clean_policy):
     # Rule: A missing or unchecked reading gives unchecked, never green.
     findings = run_checks(clean_policy, {})
-    assert len(findings) == 5
+    assert len(findings) == 6
     for f in findings:
         assert f.status == "unchecked"
 

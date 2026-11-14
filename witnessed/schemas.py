@@ -6,6 +6,23 @@ DamageArea = Literal["front", "rear", "left", "right", "none", "unsure"]
 DamageType = Literal["dent", "scratch", "crush", "crack", "broken_light", "other", "none", "unsure"]
 DamageSeverity = Literal["minor", "moderate", "severe", "unsure"]
 
+VALID_PARTS = [
+    "Front bumper",
+    "Hood",
+    "Front left",
+    "Front right",
+    "Left side",
+    "Right side",
+    "Rear left",
+    "Rear right",
+    "Rear bumper",
+    "Trunk or tailgate",
+    "Roof",
+    "Windshield",
+    "Rear window",
+    "Wheels or tires",
+]
+
 
 class Finding(BaseModel):
     check: str
@@ -19,6 +36,7 @@ class WideReading(BaseModel):
     color: str | None = None
     damage_visible: bool = False
     damage_area: DamageArea | str | None = "unsure"
+    parts_seen: list[str] = Field(default_factory=list)
 
 
 class DamageReading(BaseModel):
@@ -26,6 +44,7 @@ class DamageReading(BaseModel):
     damage_type: DamageType | str | None = "none"
     damage_area: DamageArea | str | None = "unsure"
     severity: DamageSeverity | str | None = "unsure"
+    parts_seen: list[str] = Field(default_factory=list)
 
 
 class PlateReading(BaseModel):
@@ -48,6 +67,7 @@ class Policy(BaseModel):
     claimant_name: str | None = None
     claimant_statement: str | None = None
     claimed_damage_area: str | None = None
+    claimed_parts: list[str] = Field(default_factory=list)
 
 
 class SummarySentence(BaseModel):

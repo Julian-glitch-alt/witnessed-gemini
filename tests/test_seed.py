@@ -49,12 +49,16 @@ def test_seed_creates_four_claims_and_finishes_flow():
     plate_f = next(f for f in findings_b if f["check_name"] == "plate_match")
     assert plate_f["status"] == "red"
 
-    # Claim (c) has damage_location amber
+    # Claim (c) has damage_location and parts_match amber
     findings_c = conn.execute(
         "SELECT * FROM findings WHERE claim_id = ?", (claim_ids[2],)
     ).fetchall()
     dmg_f = next(f for f in findings_c if f["check_name"] == "damage_location")
     assert dmg_f["status"] == "amber"
+    parts_f = next(f for f in findings_c if f["check_name"] == "parts_match")
+    assert parts_f["status"] == "amber"
+    assert "Front bumper" in parts_f["reason"]
+    assert "Rear bumper" in parts_f["reason"]
 
     # Claim (d) has photo_reused red citing Claim (a)
     findings_d = conn.execute(

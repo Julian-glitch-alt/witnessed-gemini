@@ -10,12 +10,17 @@
   </div>
 
   <div class="claim-top-actions">
+    {% if is_round_2 %}
+      <span class="pill pill-blue" style="font-size: 0.8rem; margin-right: 8px;">Round 2</span>
+    {% endif %}
     {% if claim.status == 'approved' %}
       <span class="pill pill-green" style="font-size: 0.8rem; margin-right: 8px;">Approved</span>
     {% elif claim.status == 'recapture_requested' %}
       <span class="pill pill-amber" style="font-size: 0.8rem; margin-right: 8px;">Recapture Requested</span>
     {% elif claim.status == 'escalated_to_siu' %}
       <span class="pill pill-red" style="font-size: 0.8rem; margin-right: 8px;">Escalated SIU</span>
+    {% elif claim.status == 'field_inspection' %}
+      <span class="pill pill-blue" style="font-size: 0.8rem; margin-right: 8px;">Field inspection</span>
     {% endif %}
     {% if next_claim_id %}
       <a href="/console/claims/{{ next_claim_id }}" class="btn-pill btn-pill-outline" style="font-size: 0.78rem; padding: 4px 14px;">
@@ -304,7 +309,7 @@
     <div class="card-panel review-card">
       <div class="review-card-header">
         <span>Review of claim {{ claim.id }}</span>
-        <span>Ready {{ ready_date_str }}</span>
+        <span>Ready {{ ready_date_str }}{% if is_round_2 %} &middot; Round 2{% endif %}</span>
       </div>
 
       <h2 class="review-main-title">Review</h2>
@@ -350,6 +355,108 @@
             </div>
 
             <div class="findings-items-list">
+            {% if group.id == 'damage' %}
+              <div class="damage-group-diagram-card" style="margin-bottom: 12px; background: #ffffff; border: 1px solid var(--line); border-radius: 8px; padding: 12px;">
+                <div class="damage-diagram-summary-line" style="font-size: 0.84rem; color: var(--ink); margin-bottom: 8px;">
+                  Seen in the photos: <strong>{{ seen_parts_str }}</strong>. Listed by the claimant: <strong>{{ listed_parts_str }}</strong>.
+                </div>
+                <div class="car-diagram-svg-container" style="display: flex; flex-direction: column; align-items: center;">
+                  <svg class="car-review-svg" viewBox="0 0 320 440" width="200" height="275" xmlns="http://www.w3.org/2000/svg" style="width: 200px; height: 275px; max-width: 100%; display: block;">
+                    <defs>
+                      <pattern id="review-blueprint-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                        <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e0f2fe" stroke-width="0.75"/>
+                      </pattern>
+                    </defs>
+                    <rect x="0" y="0" width="320" height="440" fill="url(#review-blueprint-grid)" rx="10"/>
+
+                    <text x="160" y="24" text-anchor="middle" font-size="10" font-weight="700" fill="#64748b" letter-spacing="1">FRONT</text>
+                    <text x="24" y="220" text-anchor="middle" font-size="9" font-weight="600" fill="#64748b" transform="rotate(-90 24 220)">Driver's side (left)</text>
+                    <text x="296" y="220" text-anchor="middle" font-size="9" font-weight="600" fill="#64748b" transform="rotate(90 296 220)">Passenger side (right)</text>
+
+                    <!-- Tires (Wheels or tires) -->
+                    {% set is_tires_seen = 'Wheels or tires' in seen_parts %}
+                    {% set is_tires_listed = ('Wheels or tires' in listed_parts) and not is_tires_seen %}
+                    <rect x="74" y="85" width="16" height="42" rx="6" fill="{% if is_tires_seen %}#f59e0b{% elif is_tires_listed %}#ffffff{% else %}#1e293b{% endif %}" stroke="{% if is_tires_seen %}#b45309{% elif is_tires_listed %}#ef4444{% else %}none{% endif %}" stroke-width="{% if is_tires_seen or is_tires_listed %}2{% else %}0{% endif %}" {% if is_tires_listed %}stroke-dasharray="3,2"{% endif %}/>
+                    <rect x="230" y="85" width="16" height="42" rx="6" fill="{% if is_tires_seen %}#f59e0b{% elif is_tires_listed %}#ffffff{% else %}#1e293b{% endif %}" stroke="{% if is_tires_seen %}#b45309{% elif is_tires_listed %}#ef4444{% else %}none{% endif %}" stroke-width="{% if is_tires_seen or is_tires_listed %}2{% else %}0{% endif %}" {% if is_tires_listed %}stroke-dasharray="3,2"{% endif %}/>
+                    <rect x="74" y="305" width="16" height="42" rx="6" fill="{% if is_tires_seen %}#f59e0b{% elif is_tires_listed %}#ffffff{% else %}#1e293b{% endif %}" stroke="{% if is_tires_seen %}#b45309{% elif is_tires_listed %}#ef4444{% else %}none{% endif %}" stroke-width="{% if is_tires_seen or is_tires_listed %}2{% else %}0{% endif %}" {% if is_tires_listed %}stroke-dasharray="3,2"{% endif %}/>
+                    <rect x="230" y="305" width="16" height="42" rx="6" fill="{% if is_tires_seen %}#f59e0b{% elif is_tires_listed %}#ffffff{% else %}#1e293b{% endif %}" stroke="{% if is_tires_seen %}#b45309{% elif is_tires_listed %}#ef4444{% else %}none{% endif %}" stroke-width="{% if is_tires_seen or is_tires_listed %}2{% else %}0{% endif %}" {% if is_tires_listed %}stroke-dasharray="3,2"{% endif %}/>
+
+                    <!-- Side mirrors -->
+                    <ellipse cx="78" cy="148" rx="8" ry="5" fill="#ffffff" stroke="#0f6b52" stroke-width="2"/>
+                    <ellipse cx="242" cy="148" rx="8" ry="5" fill="#ffffff" stroke="#0f6b52" stroke-width="2"/>
+
+                    <!-- Front bumper -->
+                    {% set is_fb_seen = 'Front bumper' in seen_parts %}
+                    {% set is_fb_listed = ('Front bumper' in listed_parts) and not is_fb_seen %}
+                    <path d="M 105 48 Q 160 36 215 48 Q 215 62 205 66 Q 160 56 115 66 Z" fill="{% if is_fb_seen %}#f59e0b{% else %}#ffffff{% endif %}" stroke="{% if is_fb_seen %}#b45309{% elif is_fb_listed %}#ef4444{% else %}#0f6b52{% endif %}" stroke-width="2" {% if is_fb_listed %}stroke-dasharray="4,3"{% endif %}/>
+
+                    <!-- Front left -->
+                    {% set is_fl_seen = 'Front left' in seen_parts %}
+                    {% set is_fl_listed = ('Front left' in listed_parts) and not is_fl_seen %}
+                    <path d="M 105 48 L 115 66 L 98 128 L 84 120 Q 82 70 105 48 Z" fill="{% if is_fl_seen %}#f59e0b{% else %}#ffffff{% endif %}" stroke="{% if is_fl_seen %}#b45309{% elif is_fl_listed %}#ef4444{% else %}#0f6b52{% endif %}" stroke-width="2" {% if is_fl_listed %}stroke-dasharray="4,3"{% endif %}/>
+
+                    <!-- Front right -->
+                    {% set is_fr_seen = 'Front right' in seen_parts %}
+                    {% set is_fr_listed = ('Front right' in listed_parts) and not is_fr_seen %}
+                    <path d="M 215 48 Q 238 70 236 120 L 222 128 L 205 66 L 215 48 Z" fill="{% if is_fr_seen %}#f59e0b{% else %}#ffffff{% endif %}" stroke="{% if is_fr_seen %}#b45309{% elif is_fr_listed %}#ef4444{% else %}#0f6b52{% endif %}" stroke-width="2" {% if is_fr_listed %}stroke-dasharray="4,3"{% endif %}/>
+
+                    <!-- Hood -->
+                    {% set is_hood_seen = 'Hood' in seen_parts %}
+                    {% set is_hood_listed = ('Hood' in listed_parts) and not is_hood_seen %}
+                    <path d="M 115 66 Q 160 56 205 66 L 202 128 L 118 128 Z" fill="{% if is_hood_seen %}#f59e0b{% else %}#ffffff{% endif %}" stroke="{% if is_hood_seen %}#b45309{% elif is_hood_listed %}#ef4444{% else %}#0f6b52{% endif %}" stroke-width="2" {% if is_hood_listed %}stroke-dasharray="4,3"{% endif %}/>
+
+                    <!-- Windshield -->
+                    {% set is_ws_seen = 'Windshield' in seen_parts %}
+                    {% set is_ws_listed = ('Windshield' in listed_parts) and not is_ws_seen %}
+                    <path d="M 102 132 L 218 132 L 208 178 L 112 178 Z" fill="{% if is_ws_seen %}#f59e0b{% else %}#ffffff{% endif %}" stroke="{% if is_ws_seen %}#b45309{% elif is_ws_listed %}#ef4444{% else %}#0f6b52{% endif %}" stroke-width="2" {% if is_ws_listed %}stroke-dasharray="4,3"{% endif %}/>
+
+                    <!-- Left side -->
+                    {% set is_ls_seen = 'Left side' in seen_parts %}
+                    {% set is_ls_listed = ('Left side' in listed_parts) and not is_ls_seen %}
+                    <path d="M 98 132 L 112 178 L 112 268 L 98 305 L 84 295 L 84 140 Z" fill="{% if is_ls_seen %}#f59e0b{% else %}#ffffff{% endif %}" stroke="{% if is_ls_seen %}#b45309{% elif is_ls_listed %}#ef4444{% else %}#0f6b52{% endif %}" stroke-width="2" {% if is_ls_listed %}stroke-dasharray="4,3"{% endif %}/>
+
+                    <!-- Right side -->
+                    {% set is_rs_seen = 'Right side' in seen_parts %}
+                    {% set is_rs_listed = ('Right side' in listed_parts) and not is_rs_seen %}
+                    <path d="M 222 132 L 236 140 L 236 295 L 222 305 L 208 268 L 208 178 L 218 132 Z" fill="{% if is_rs_seen %}#f59e0b{% else %}#ffffff{% endif %}" stroke="{% if is_rs_seen %}#b45309{% elif is_rs_listed %}#ef4444{% else %}#0f6b52{% endif %}" stroke-width="2" {% if is_rs_listed %}stroke-dasharray="4,3"{% endif %}/>
+
+                    <!-- Roof -->
+                    {% set is_roof_seen = 'Roof' in seen_parts %}
+                    {% set is_roof_listed = ('Roof' in listed_parts) and not is_roof_seen %}
+                    <path d="M 112 178 L 208 178 L 206 268 L 114 268 Z" fill="{% if is_roof_seen %}#f59e0b{% else %}#ffffff{% endif %}" stroke="{% if is_roof_seen %}#b45309{% elif is_roof_listed %}#ef4444{% else %}#0f6b52{% endif %}" stroke-width="2" {% if is_roof_listed %}stroke-dasharray="4,3"{% endif %}/>
+
+                    <!-- Rear window -->
+                    {% set is_rw_seen = 'Rear window' in seen_parts %}
+                    {% set is_rw_listed = ('Rear window' in listed_parts) and not is_rw_seen %}
+                    <path d="M 114 268 L 206 268 L 214 312 L 106 312 Z" fill="{% if is_rw_seen %}#f59e0b{% else %}#ffffff{% endif %}" stroke="{% if is_rw_seen %}#b45309{% elif is_rw_listed %}#ef4444{% else %}#0f6b52{% endif %}" stroke-width="2" {% if is_rw_listed %}stroke-dasharray="4,3"{% endif %}/>
+
+                    <!-- Trunk or tailgate -->
+                    {% set is_tt_seen = 'Trunk or tailgate' in seen_parts %}
+                    {% set is_tt_listed = ('Trunk or tailgate' in listed_parts) and not is_tt_seen %}
+                    <path d="M 106 312 L 214 312 L 210 368 L 110 368 Z" fill="{% if is_tt_seen %}#f59e0b{% else %}#ffffff{% endif %}" stroke="{% if is_tt_seen %}#b45309{% elif is_tt_listed %}#ef4444{% else %}#0f6b52{% endif %}" stroke-width="2" {% if is_tt_listed %}stroke-dasharray="4,3"{% endif %}/>
+
+                    <!-- Rear left -->
+                    {% set is_rl_seen = 'Rear left' in seen_parts %}
+                    {% set is_rl_listed = ('Rear left' in listed_parts) and not is_rl_seen %}
+                    <path d="M 98 305 L 106 312 L 110 368 L 96 384 Q 84 370 84 320 Z" fill="{% if is_rl_seen %}#f59e0b{% else %}#ffffff{% endif %}" stroke="{% if is_rl_seen %}#b45309{% elif is_rl_listed %}#ef4444{% else %}#0f6b52{% endif %}" stroke-width="2" {% if is_rl_listed %}stroke-dasharray="4,3"{% endif %}/>
+
+                    <!-- Rear right -->
+                    {% set is_rr_seen = 'Rear right' in seen_parts %}
+                    {% set is_rr_listed = ('Rear right' in listed_parts) and not is_rr_seen %}
+                    <path d="M 222 305 Q 236 320 236 370 L 224 384 L 210 368 L 214 312 Z" fill="{% if is_rr_seen %}#f59e0b{% else %}#ffffff{% endif %}" stroke="{% if is_rr_seen %}#b45309{% elif is_rr_listed %}#ef4444{% else %}#0f6b52{% endif %}" stroke-width="2" {% if is_rr_listed %}stroke-dasharray="4,3"{% endif %}/>
+
+                    <!-- Rear bumper -->
+                    {% set is_rb_seen = 'Rear bumper' in seen_parts %}
+                    {% set is_rb_listed = ('Rear bumper' in listed_parts) and not is_rb_seen %}
+                    <path d="M 96 384 L 110 368 Q 160 380 210 368 L 224 384 Q 160 404 96 384 Z" fill="{% if is_rb_seen %}#f59e0b{% else %}#ffffff{% endif %}" stroke="{% if is_rb_seen %}#b45309{% elif is_rb_listed %}#ef4444{% else %}#0f6b52{% endif %}" stroke-width="2" {% if is_rb_listed %}stroke-dasharray="4,3"{% endif %}/>
+                  </svg>
+                  <div class="diagram-legend" style="display: flex; gap: 14px; justify-content: center; font-size: 0.72rem; color: var(--mute); margin-top: 8px;">
+                    <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 12px; height: 10px; background: #f59e0b; border: 1px solid #b45309; border-radius: 2px;"></span> Seen in photos</span>
+                    <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 12px; height: 10px; background: #ffffff; border: 1.5px dashed #ef4444; border-radius: 2px;"></span> Listed by claimant only</span>
+                  </div>
+                </div>
+              </div>
+            {% endif %}
               {% for f in group.findings %}
                 <div class="finding-item-row findings-row-{{ f.status }}">
                   <div class="finding-num-circle {{ f.status }}">{{ f.number }}</div>
@@ -390,33 +497,86 @@
 
     <!-- Your Decision Card -->
     <div class="card-panel decision-card">
-      <div class="decision-card-title">Your decision</div>
-      <form action="/console/claims/{ id }}/decision" method="post" id="decision-form" onsubmit="this.action='/console/claims/{{ claim.id }}/decision'">
-        <div class="form-group" style="margin-bottom: 12px;">
-          <input type="text" name="note" class="form-control" placeholder="Decision note (optional)..." style="font-size: 0.82rem; padding: 7px 10px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+        <div class="decision-card-title" style="margin-bottom: 0;">Your decision</div>
+        <div style="font-size: 0.76rem; color: var(--mute);">0 of 0 reviewed</div>
+      </div>
+      <div style="font-size: 0.74rem; color: var(--mute); margin-bottom: 14px;">
+        Activity: review verified evidence. Claimant {{ claim.claimant_name }}.
+      </div>
+
+      <div class="decision-buttons-stack">
+        <!-- Approve (Primary) -->
+        <button type="button" class="btn-approve-full" onclick="submitDecision('approve')">
+          Approve
+        </button>
+
+        <!-- 2x2 Grid -->
+        <div class="decision-two-up" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <button type="button" class="decision-sub-btn" onclick="toggleEditApprove()">
+            Edit and approve
+          </button>
+          <button type="button" class="decision-sub-btn" onclick="toggleRecapture()">
+            Request recapture
+          </button>
+          <button type="button" class="decision-sub-btn red-action" onclick="submitDecision('refer_to_siu')">
+            Refer to SIU
+          </button>
+          <button type="button" class="decision-sub-btn" onclick="submitDecision('field_inspection')">
+            Field inspection
+          </button>
         </div>
 
-        <div class="decision-buttons-stack">
-          <button type="submit" name="action" value="approve" class="btn-approve-full">
-            Approve
-          </button>
-          <div class="decision-two-up">
-            <button type="submit" name="action" value="recapture" class="decision-sub-btn">
-              Request recapture
+        <!-- Inline Edit & Approve Box -->
+        <div id="edit-approve-panel" style="display: none; margin-top: 10px; padding: 12px; background: #f8fafc; border: 1px solid var(--line); border-radius: 8px;">
+          <div style="font-weight: 600; font-size: 0.82rem; margin-bottom: 6px; color: var(--ink);">Edit and approve note</div>
+          <textarea id="edit-approve-note" class="form-control" rows="2" placeholder="Note on what was edited or approved..." style="font-size: 0.82rem; margin-bottom: 8px; width: 100%; border-radius: 6px; padding: 6px 8px; box-sizing: border-box;"></textarea>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn-approve-full" style="padding: 6px 14px; font-size: 0.82rem; width: auto;" onclick="confirmEditApprove()">
+              Confirm approval
             </button>
-            <button type="submit" name="action" value="escalate" class="decision-sub-btn red-action">
-              Refer to SIU
+            <button type="button" class="decision-sub-btn" style="padding: 6px 12px; font-size: 0.82rem; width: auto;" onclick="toggleEditApprove()">
+              Cancel
             </button>
           </div>
         </div>
-      </form>
 
+        <!-- Inline Recapture Request Box -->
+        <div id="recapture-panel" style="display: none; margin-top: 10px; padding: 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;">
+          <div style="font-weight: 700; font-size: 0.82rem; margin-bottom: 8px; color: #92400e;">Pick slots to recapture</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.8rem; margin-bottom: 10px; color: #78350f;">
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="checkbox" name="recapture_slot" value="plate"> License plate
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="checkbox" name="recapture_slot" value="vin"> VIN plate
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="checkbox" name="recapture_slot" value="damage"> Damage close-up
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="checkbox" name="recapture_slot" value="wide"> The whole vehicle
+            </label>
+          </div>
+          <input type="text" id="recapture-reason" class="form-control" placeholder="Optional reason for claimant..." style="font-size: 0.82rem; margin-bottom: 10px; width: 100%; border-radius: 6px; padding: 6px 8px; box-sizing: border-box;">
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn-approve-full" style="background: #d97706; padding: 6px 14px; font-size: 0.82rem; width: auto;" onclick="confirmRecapture()">
+              Send recapture request
+            </button>
+            <button type="button" class="decision-sub-btn" style="padding: 6px 12px; font-size: 0.82rem; width: auto;" onclick="toggleRecapture()">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Decision Log -->
       {% if decisions %}
-        <div class="decision-log-wrap">
-          <div style="font-weight: 700; text-transform: uppercase; font-size: 0.72rem; margin-bottom: 6px; letter-spacing: 0.04em;">Decision Log</div>
+        <div class="decision-log-wrap" style="margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line);">
+          <div style="font-weight: 700; text-transform: uppercase; font-size: 0.72rem; margin-bottom: 6px; letter-spacing: 0.04em; color: var(--mute);">Decision Log</div>
           {% for d in decisions %}
-            <div style="padding: 3px 0;">
-              <strong>{{ d.action | capitalize }}</strong>{% if d.note %} &mdash; <em>{{ d.note }}</em>{% endif %}
+            <div style="padding: 3px 0; font-size: 0.8rem;">
+              <strong>{{ d.action | replace('_', ' ') | capitalize }}</strong>{% if d.note %} &mdash; <em>{{ d.note }}</em>{% endif %}
               <span style="font-size: 0.72rem; color: var(--mute);">({{ d.timestamp[:19].replace('T', ' ') }})</span>
             </div>
           {% endfor %}
@@ -424,11 +584,54 @@
       {% endif %}
     </div>
 
+    <!-- Notes Card -->
+    <div class="card-panel notes-card">
+      <div style="font-weight: 700; font-size: 0.95rem; color: var(--ink); margin-bottom: 4px;">Notes</div>
+      <div style="font-size: 0.78rem; color: var(--mute); margin-bottom: 8px;">Add a note</div>
+      <form action="/console/claims/{{ claim.id }}/notes" method="post" id="note-form" onsubmit="submitNoteForm(event)">
+        <div style="margin-bottom: 8px;">
+          <textarea id="note-text-input" name="note" class="form-control" rows="3" placeholder="What should the next adjuster know?" style="font-size: 0.84rem; width: 100%; border-radius: 6px; padding: 8px; box-sizing: border-box;" required></textarea>
+        </div>
+        <button type="submit" class="decision-sub-btn" style="font-size: 0.82rem; padding: 6px 16px; font-weight: 600;">Save note</button>
+      </form>
+
+      <div class="notes-list-wrap" id="notes-list-wrap" style="margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px;">
+        {% if claim_notes %}
+          {% for n in claim_notes %}
+            <div class="note-item" style="margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9; font-size: 0.82rem; line-height: 1.4;">
+              <div style="display: flex; justify-content: space-between; color: var(--mute); font-size: 0.72rem; margin-bottom: 2px;">
+                <strong>{{ n.author or "Adjuster" }}</strong>
+                <span>{{ n.created_at[:16].replace('T', ' ') }}</span>
+              </div>
+              <div style="color: var(--ink);">{{ n.note }}</div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div id="no-notes-msg" style="color: var(--mute); font-size: 0.78rem; font-style: italic;">No notes saved yet.</div>
+        {% endif %}
+      </div>
+    </div>
+
     <!-- Report Files Card -->
     <div class="card-panel report-files-card">
       <div class="report-files-title">Report files</div>
       <div class="report-file-row">
-        <span class="report-file-desc">Sealed package &mdash; anyone can check it on Verify</span>
+        <div>
+          <div style="font-weight: 600; color: var(--ink);">Original report</div>
+          <div style="color: var(--mute); font-size: 0.74rem;">Made {{ submitted_date_str }}, sent to the insurer</div>
+        </div>
+      </div>
+      <div class="report-file-row">
+        <div>
+          <div style="font-weight: 600; color: var(--ink);">Reviewed report</div>
+          <div style="color: var(--mute); font-size: 0.74rem;">Made when you decide</div>
+        </div>
+      </div>
+      <div class="report-file-row">
+        <div>
+          <div style="font-weight: 600; color: var(--ink);">Sealed package</div>
+          <div style="color: var(--mute); font-size: 0.74rem;">Anyone can check it on Verify</div>
+        </div>
         {% if claim.package_bytes %}
           <a href="/console/claims/{{ claim.id }}/package" class="report-file-link" download>Download</a>
         {% else %}
@@ -436,8 +639,50 @@
         {% endif %}
       </div>
       <div class="report-file-row">
-        <span class="report-file-desc">Verify this package</span>
+        <div>
+          <div style="font-weight: 600; color: var(--ink);">Verify this package</div>
+          <div style="color: var(--mute); font-size: 0.74rem;">Check the seal in your browser</div>
+        </div>
         <a href="/verify" class="report-file-link">Verify</a>
+      </div>
+      <div style="font-size: 0.74rem; color: var(--mute); margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
+        <span>Not delivered: pending (0 attempts)</span>
+        <button type="button" class="decision-sub-btn" style="padding: 3px 10px; font-size: 0.72rem;">Resend</button>
+      </div>
+    </div>
+
+    <!-- More Actions Card -->
+    <div class="card-panel more-actions-card">
+      <div style="font-weight: 700; font-size: 0.95rem; color: var(--ink); margin-bottom: 10px;">More actions</div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button type="button" class="decision-sub-btn" style="flex: 1; min-width: 90px; font-size: 0.76rem;">Resend the report</button>
+        <button type="button" class="decision-sub-btn" style="flex: 1; min-width: 80px; font-size: 0.76rem;">Delete media</button>
+        <button type="button" class="decision-sub-btn" id="btn-toggle-timeline" onclick="toggleTimeline()" style="flex: 1; min-width: 110px; font-size: 0.76rem;">Show the timeline</button>
+      </div>
+
+      <div id="timeline-drawer" class="timeline-drawer" style="display: none; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px;">
+        <div style="font-weight: 700; font-size: 0.84rem; color: var(--ink); margin-bottom: 10px;">Timeline</div>
+        <div class="timeline-list">
+          {% if timeline_events %}
+            {% for ev in timeline_events %}
+              <div class="timeline-event-item" style="display: flex; gap: 10px; margin-bottom: 12px; font-size: 0.8rem;">
+                <div class="timeline-dot-col" style="display: flex; flex-direction: column; align-items: center; width: 14px;">
+                  <span class="timeline-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #0f6b52; display: inline-block; flex-shrink: 0; margin-top: 4px;"></span>
+                  <span class="timeline-line" style="width: 1px; flex: 1; background: #cbd5e1; margin-top: 2px;"></span>
+                </div>
+                <div class="timeline-event-body" style="flex: 1;">
+                  <div style="color: var(--mute); font-size: 0.72rem;">{{ ev.created_at[:19].replace('T', ' ') }}</div>
+                  <div style="font-weight: 600; color: var(--ink);">{{ ev.event_type }}</div>
+                  {% if ev.detail %}
+                    <div style="color: #475569; font-size: 0.78rem; margin-top: 1px;">{{ ev.detail }}</div>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div style="color: var(--mute); font-size: 0.78rem; font-style: italic;">No timeline events recorded.</div>
+          {% endif %}
+        </div>
       </div>
     </div>
   </div>
@@ -520,6 +765,131 @@ async function labelFinding(claimId, checkName, labelValue, btn) {
     }
   } catch (err) {
     console.error('Failed to label finding', err);
+  }
+}
+
+async function submitDecision(action, note = '') {
+  try {
+    const formData = new FormData();
+    formData.append('action', action);
+    if (note) formData.append('note', note);
+    const resp = await fetch('/console/claims/{{ claim.id }}/decision', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json' },
+      body: formData
+    });
+    if (resp.ok) {
+      window.location.reload();
+    } else {
+      const data = await resp.json().catch(() => ({}));
+      alert(data.detail || 'Failed to submit decision');
+    }
+  } catch(e) {
+    alert('Error submitting decision');
+  }
+}
+
+function toggleEditApprove() {
+  const p = document.getElementById('edit-approve-panel');
+  if (p) {
+    p.style.display = p.style.display === 'none' ? 'block' : 'none';
+    if (p.style.display === 'block') {
+      const rec = document.getElementById('recapture-panel');
+      if (rec) rec.style.display = 'none';
+    }
+  }
+}
+
+function confirmEditApprove() {
+  const note = (document.getElementById('edit-approve-note') ? document.getElementById('edit-approve-note').value.trim() : '');
+  submitDecision('edit_and_approve', note);
+}
+
+function toggleRecapture() {
+  const p = document.getElementById('recapture-panel');
+  if (p) {
+    p.style.display = p.style.display === 'none' ? 'block' : 'none';
+    if (p.style.display === 'block') {
+      const edit = document.getElementById('edit-approve-panel');
+      if (edit) edit.style.display = 'none';
+    }
+  }
+}
+
+async function confirmRecapture() {
+  const checked = Array.from(document.querySelectorAll('input[name="recapture_slot"]:checked')).map(cb => cb.value);
+  if (checked.length === 0) {
+    alert('Please select at least one photo slot to recapture.');
+    return;
+  }
+  const reason = document.getElementById('recapture-reason') ? document.getElementById('recapture-reason').value.trim() : '';
+  try {
+    const formData = new FormData();
+    checked.forEach(s => formData.append('slots', s));
+    if (reason) formData.append('reason', reason);
+    const resp = await fetch('/console/claims/{{ claim.id }}/recapture', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json' },
+      body: formData
+    });
+    if (resp.ok) {
+      window.location.reload();
+    } else {
+      const data = await resp.json().catch(() => ({}));
+      alert(data.detail || 'Failed to request recapture');
+    }
+  } catch(e) {
+    alert('Error requesting recapture');
+  }
+}
+
+async function submitNoteForm(e) {
+  e.preventDefault();
+  const input = document.getElementById('note-text-input');
+  if (!input) return;
+  const note = input.value.trim();
+  if (!note) return;
+  try {
+    const formData = new FormData();
+    formData.append('note', note);
+    const resp = await fetch('/console/claims/{{ claim.id }}/notes', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json' },
+      body: formData
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      input.value = '';
+      const listWrap = document.getElementById('notes-list-wrap');
+      const noNotes = document.getElementById('no-notes-msg');
+      if (noNotes) noNotes.remove();
+      const div = document.createElement('div');
+      div.className = 'note-item';
+      div.style.cssText = 'margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9; font-size: 0.82rem; line-height: 1.4;';
+      div.innerHTML = `
+        <div style="display: flex; justify-content: space-between; color: var(--mute); font-size: 0.72rem; margin-bottom: 2px;">
+          <strong>Adjuster</strong>
+          <span>${(data.created_at || '').substring(0, 16).replace('T', ' ')}</span>
+        </div>
+        <div style="color: var(--ink);">${data.note}</div>
+      `;
+      if (listWrap) listWrap.prepend(div);
+    } else {
+      const data = await resp.json().catch(() => ({}));
+      alert(data.detail || 'Failed to save note');
+    }
+  } catch(err) {
+    alert('Failed to save note');
+  }
+}
+
+function toggleTimeline() {
+  const drawer = document.getElementById('timeline-drawer');
+  const btn = document.getElementById('btn-toggle-timeline');
+  if (drawer) {
+    const isHidden = drawer.style.display === 'none';
+    drawer.style.display = isHidden ? 'block' : 'none';
+    if (btn) btn.textContent = isHidden ? 'Hide the timeline' : 'Show the timeline';
   }
 }
 </script>

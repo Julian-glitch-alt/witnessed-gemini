@@ -201,6 +201,57 @@ def check_photo_reused(
     )
 
 
+def check_parts_match(policy: Any, readings: Any) -> Finding:
+    wide_reading = _get_val(readings, "wide")
+    damage_reading = _get_val(readings, "damage")
+
+    seen_parts: list[str] = []
+    for r in (wide_reading, damage_reading):
+        if r is not None:
+            parts = _get_val(r, "parts_seen", []) or []
+            for p in parts:
+                p_str = str(p).strip()
+                if p_str and p_str not in seen_parts:
+                    seen_parts.append(p_str)
+
+    claimed_parts_raw = _get_val(policy, "claimed_parts") or _get_val(policy, "parts") or []
+    if isinstance(claimed_parts_raw, str):
+        claimed_parts_raw = [claimed_parts_raw]
+
+    listed_parts: list[str] = []
+    for p in claimed_parts_raw:
+        p_str = str(p).strip()
+        if p_str and p_str not in listed_parts:
+            listed_parts.append(p_str)
+
+    if not seen_parts or not listed_parts:
+        return Finding(
+            check="parts_match",
+            status="unchecked",
+            reason="Claimant listed parts or photo damage parts are not specified.",
+        )
+
+    seen_lower = {p.lower() for p in seen_parts}
+    listed_lower = {p.lower() for p in listed_parts}
+    overlap = seen_lower.intersection(listed_lower)
+
+    seen_str = ", ".join(seen_parts)
+    listed_str = ", ".join(listed_parts)
+
+    if overlap:
+        return Finding(
+            check="parts_match",
+            status="green",
+            reason=f"Observed damage parts ({seen_str}) match claimant listed parts ({listed_str}).",
+        )
+    else:
+        return Finding(
+            check="parts_match",
+            status="amber",
+            reason=f"The photos show {seen_str}, but the claim lists {listed_str}.",
+        )
+
+
 def run_checks(
     policy: Any,
     readings: Any,
@@ -433,7 +484,10 @@ def run_checks(
                     reason=f"VIN {vin_str} failed ISO 3779 validation.",
                 ))
 
-    # 6. duplicate_photo & 7. photo_reused
+    # 6. parts_match
+    findings.append(check_parts_match(policy, readings))
+
+    # 7. duplicate_photo & 8. photo_reused
     if photos is not None:
         findings.append(check_duplicate_photo(photos))
         findings.append(check_photo_reused(photos, reused_photos))
