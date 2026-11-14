@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 import os
 import sqlite3
@@ -105,9 +105,45 @@ def init_db() -> None:
             detail TEXT,
             created_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS policies (
+            policy_number TEXT PRIMARY KEY,
+            insured_name TEXT NOT NULL,
+            vehicle_year INTEGER NOT NULL,
+            vehicle_make TEXT NOT NULL,
+            vehicle_model TEXT NOT NULL,
+            vehicle_color TEXT NOT NULL,
+            vin TEXT,
+            plate TEXT NOT NULL,
+            state TEXT NOT NULL,
+            collision INTEGER NOT NULL DEFAULT 0,
+            comprehensive INTEGER NOT NULL DEFAULT 0,
+            liability_only INTEGER NOT NULL DEFAULT 0,
+            deductible INTEGER NOT NULL DEFAULT 500,
+            lienholder TEXT,
+            effective_date TEXT NOT NULL,
+            expiry_date TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
         """)
         try:
             conn.execute("ALTER TABLE claims ADD COLUMN ai_summary TEXT;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE claims ADD COLUMN policy_number TEXT;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE claims ADD COLUMN policy_snapshot_json TEXT;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE claims ADD COLUMN vehicle_year INTEGER;")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE claims ADD COLUMN vin TEXT;")
         except Exception:
             pass
         try:
@@ -158,7 +194,111 @@ def init_db() -> None:
             conn.execute("ALTER TABLE claims ADD COLUMN version INTEGER DEFAULT 1;")
         except Exception:
             pass
+        seed_demo_policies(conn)
     conn.close()
+
+
+def seed_demo_policies(conn: sqlite3.Connection) -> None:
+    now = datetime.now(timezone.utc)
+    today = now.date()
+
+    eff_active = min(date(2026, 1, 1), today - timedelta(days=180)).isoformat()
+    exp_active = max(date(2027, 1, 1), today + timedelta(days=185)).isoformat()
+
+    first_of_month = today.replace(day=1)
+    exp_1004_date = first_of_month - timedelta(days=15)
+    exp_1004 = min(date(2026, 10, 15), exp_1004_date).isoformat()
+    eff_1004 = (date.fromisoformat(exp_1004) - timedelta(days=365)).isoformat()
+
+    demo_data = [
+        (
+            "DEMO-AUTO-1001",
+            "Jane Doe",
+            2020,
+            "Toyota",
+            "Camry",
+            "blue",
+            "1HGCM82633A004352",
+            "7XYZ123",
+            "CA",
+            1,
+            1,
+            0,
+            500,
+            None,
+            eff_active,
+            exp_active,
+            now.isoformat(),
+        ),
+        (
+            "DEMO-AUTO-1002",
+            "Bob Miller",
+            2019,
+            "Honda",
+            "Civic",
+            "white",
+            None,
+            "8KLM204",
+            "CA",
+            1,
+            1,
+            0,
+            1000,
+            None,
+            eff_active,
+            exp_active,
+            now.isoformat(),
+        ),
+        (
+            "DEMO-AUTO-1003",
+            "Alice Brown",
+            2018,
+            "Ford",
+            "F-150",
+            "black",
+            None,
+            "6TRK889",
+            "CA",
+            0,
+            0,
+            1,
+            0,
+            None,
+            eff_active,
+            exp_active,
+            now.isoformat(),
+        ),
+        (
+            "DEMO-AUTO-1004",
+            "David Clark",
+            2017,
+            "Nissan",
+            "Altima",
+            "silver",
+            None,
+            "5ALT321",
+            "CA",
+            1,
+            0,
+            0,
+            500,
+            None,
+            eff_1004,
+            exp_1004,
+            now.isoformat(),
+        ),
+    ]
+    for row in demo_data:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO policies (
+                policy_number, insured_name, vehicle_year, vehicle_make, vehicle_model,
+                vehicle_color, vin, plate, state, collision, comprehensive, liability_only,
+                deductible, lienholder, effective_date, expiry_date, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            row,
+        )
 
 
 def log_claim_event(claim_id: str, event_type: str, detail: str | None = None) -> None:

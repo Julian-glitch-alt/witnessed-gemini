@@ -8,6 +8,7 @@ import logging
 import os
 from pathlib import Path
 import random
+import re
 import secrets
 from typing import Any
 
@@ -24,6 +25,7 @@ from witnessed.schemas import (
     VALID_PARTS,
     DamageReading,
     Finding,
+    OdometerReading,
     PlateReading,
     Policy,
     VinReading,
@@ -37,19 +39,25 @@ SLOT_SCHEMAS: dict[str, type[Any]] = {
     "damage": DamageReading,
     "plate": PlateReading,
     "vin": VinReading,
+    "odometer": OdometerReading,
 }
 
-VALID_SLOTS = {"wide", "damage", "plate", "vin"}
+VALID_SLOTS = {"wide", "damage", "plate", "vin", "odometer"}
+REQUIRED_SLOTS = ["plate", "vin", "damage", "wide"]
 
 HUMAN_LABELS: dict[str, str] = {
+    "policy_active": "Policy active",
+    "coverage_applies": "Coverage",
     "plate_match": "Plate",
     "vehicle_match": "Vehicle",
-    "vin_format": "VIN",
+    "vin_format": "VIN format",
+    "vin_match": "VIN match",
     "damage_present": "Damage visible",
     "damage_location": "Damage location",
     "parts_match": "Parts match",
     "duplicate_photo": "Duplicate photo",
     "photo_reused": "Photo reused",
+    "photo_skipped": "Photo skipped",
 }
 
 logger = logging.getLogger(__name__)
@@ -242,6 +250,64 @@ def build_findings_summary(findings: list[Any]) -> str:
         else:
             return f"{count} issues need review: {', '.join(issues)}."
     return "No issues found by the automated checks. The adjuster makes the decision."
+
+
+def build_coverage_summary_line(policy_dict: dict[str, Any], group_findings: list[Any]) -> str:
+    facts = []
+    f_map = {
+        (f["check_name"] if isinstance(f, dict) or hasattr(f, "__getitem__") else f.check): (
+            f["status"] if isinstance(f, dict) or hasattr(f, "__getitem__") else f.status
+        )
+        for f in group_findings
+    }
+    pol_num = policy_dict.get("policy_number") or "DEMO-AUTO-1001"
+    facts.append(f"Policy {pol_num} on file.")
+
+    ded = policy_dict.get("deductible", 500)
+    lien = policy_dict.get("lienholder")
+    lien_str = f"lienholder: {lien}" if lien else "no lienholder"
+
+    cov_status = f_map.get("coverage_applies")
+    if cov_status == "green":
+        inc = str(policy_dict.get("incident_type") or "").lower()
+        if any(k in inc for k in ["animal", "vandalism", "glass", "hail", "flood", "tree", "theft", "stolen", "fire"]) and policy_dict.get("comprehensive"):
+            cov_name = "Comprehensive"
+        elif policy_dict.get("collision"):
+            cov_name = "Collision"
+        elif policy_dict.get("comprehensive"):
+            cov_name = "Comprehensive"
+        else:
+            cov_name = "Collision"
+        facts.append(f"{cov_name} coverage, ${ded} deductible, {lien_str}.")
+    elif policy_dict.get("liability_only"):
+        facts.append(f"Liability only, {lien_str}.")
+    else:
+        if policy_dict.get("collision") and policy_dict.get("comprehensive"):
+            cov_name = "Collision + Comprehensive"
+        elif policy_dict.get("collision"):
+            cov_name = "Collision"
+        elif policy_dict.get("comprehensive"):
+            cov_name = "Comprehensive"
+        else:
+            cov_name = "Collision"
+        facts.append(f"{cov_name} coverage, ${ded} deductible, {lien_str}.")
+
+    if f_map.get("vin_match") == "green":
+        facts.append("The VIN photo matches the policy.")
+    elif f_map.get("vin_match") == "red":
+        facts.append("The VIN photo does not match the policy.")
+
+    if f_map.get("plate_match") == "green":
+        facts.append("The plate photo matches the policy.")
+    elif f_map.get("plate_match") == "red":
+        facts.append("The plate photo does not match the policy.")
+
+    if f_map.get("vehicle_match") == "green":
+        facts.append("The vehicle photo matches the policy.")
+    elif f_map.get("vehicle_match") in ("red", "amber"):
+        facts.append("The vehicle photo does not match the policy.")
+
+    return " ".join(facts)
 
 
 def generate_qr_data_uri(data_url: str) -> str:
@@ -439,10 +505,14 @@ async def console_list(request: Request):
 
 @app.get("/console/new", response_class=HTMLResponse)
 async def console_new_form(request: Request):
+    conn = get_connection()
+    policies = conn.execute("SELECT * FROM policies ORDER BY policy_number ASC").fetchall()
+    conn.close()
     return templates.TemplateResponse(
         request=request,
         name="console_new.html",
         context={
+            "policies": policies,
             "needs_decision_count": get_needs_decision_count(),
             "active_nav": "new",
         },
@@ -452,12 +522,15 @@ async def console_new_form(request: Request):
 @app.post("/console/new", response_class=HTMLResponse)
 async def console_create_claim(
     request: Request,
-    make: str = Form(...),
-    model: str = Form(...),
-    color: str = Form(...),
-    plate: str = Form(...),
-    state: str = Form(...),
     claimant_name: str = Form(...),
+    policy_picker: str | None = Form(None),
+    year: int | None = Form(None),
+    make: str | None = Form(None),
+    model: str | None = Form(None),
+    color: str | None = Form(None),
+    plate: str | None = Form(None),
+    state: str | None = Form(None),
+    vin: str | None = Form(None),
     claimant_statement: str = Form(""),
     claimed_damage_area: str = Form(""),
 ):
@@ -465,30 +538,125 @@ async def console_create_claim(
     token = secrets.token_urlsafe(16)
     code_letter = random.choice("ABCDEFGHJKLMNPQRSTUVWXYZ")
     session_code = f"{code_letter}{random.randint(1,9)}-{random.randint(10,99)}"
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    today_d = now.date()
 
     conn = get_connection()
+
+    selected_policy = None
+    if policy_picker and policy_picker != "custom":
+        selected_policy = conn.execute(
+            "SELECT * FROM policies WHERE policy_number = ?", (policy_picker,)
+        ).fetchone()
+
+    if selected_policy:
+        pol_num = selected_policy["policy_number"]
+        v_year = selected_policy["vehicle_year"]
+        v_make = (make or selected_policy["vehicle_make"]).strip()
+        v_model = (model or selected_policy["vehicle_model"]).strip()
+        v_color = (color or selected_policy["vehicle_color"]).strip()
+        v_plate = (plate or selected_policy["plate"]).strip()
+        v_state = (state or selected_policy["state"]).strip().upper()
+        v_vin = (vin or selected_policy["vin"] or "").strip().upper() or None
+        snapshot = dict(selected_policy)
+        snapshot_json = json.dumps(snapshot)
+    elif policy_picker == "custom":
+        # Custom policy / new policy from own car: create a trial policy
+        pol_num = f"TRIAL-AUTO-{secrets.token_hex(3).upper()}"
+        v_year = int(year) if year else 2022
+        v_make = (make or "Toyota").strip()
+        v_model = (model or "Camry").strip()
+        v_color = (color or "Blue").strip()
+        v_plate = (plate or "7XYZ123").strip()
+        v_state = (state or "CA").strip().upper()
+        v_vin = vin.strip().upper() if vin and vin.strip() else None
+
+        eff_date = today_d.isoformat()
+        exp_date = (today_d + timedelta(days=365)).isoformat()
+
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO policies (
+                    policy_number, insured_name, vehicle_year, vehicle_make, vehicle_model,
+                    vehicle_color, vin, plate, state, collision, comprehensive, liability_only,
+                    deductible, lienholder, effective_date, expiry_date, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 0, 500, NULL, ?, ?, ?)
+                """,
+                (
+                    pol_num,
+                    claimant_name.strip(),
+                    v_year,
+                    v_make,
+                    v_model,
+                    v_color,
+                    v_vin,
+                    v_plate,
+                    v_state,
+                    eff_date,
+                    exp_date,
+                    now_iso,
+                ),
+            )
+        snapshot = {
+            "policy_number": pol_num,
+            "insured_name": claimant_name.strip(),
+            "vehicle_year": v_year,
+            "vehicle_make": v_make,
+            "vehicle_model": v_model,
+            "vehicle_color": v_color,
+            "vin": v_vin,
+            "plate": v_plate,
+            "state": v_state,
+            "collision": 1,
+            "comprehensive": 1,
+            "liability_only": 0,
+            "deductible": 500,
+            "lienholder": None,
+            "effective_date": eff_date,
+            "expiry_date": exp_date,
+        }
+        snapshot_json = json.dumps(snapshot)
+    else:
+        # Legacy claim created without policy picker
+        pol_num = None
+        v_year = int(year) if year else None
+        v_make = (make or "").strip()
+        v_model = (model or "").strip()
+        v_color = (color or "").strip()
+        v_plate = (plate or "").strip()
+        v_state = (state or "").strip().upper()
+        v_vin = vin.strip().upper() if vin and vin.strip() else None
+        snapshot = None
+        snapshot_json = None
+
     with conn:
         conn.execute(
             """
             INSERT INTO claims (
                 id, make, model, color, plate, state,
                 claimant_name, claimant_statement, claimed_damage_area,
-                status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, created_at, policy_number, policy_snapshot_json,
+                vehicle_year, vin
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 claim_id,
-                make.strip(),
-                model.strip(),
-                color.strip(),
-                plate.strip(),
-                state.strip().upper(),
+                v_make,
+                v_model,
+                v_color,
+                v_plate,
+                v_state,
                 claimant_name.strip(),
                 claimant_statement.strip(),
                 claimed_damage_area.strip().lower(),
                 "pending_capture",
                 now_iso,
+                pol_num,
+                snapshot_json,
+                v_year,
+                v_vin,
             ),
         )
         conn.execute(
@@ -506,7 +674,7 @@ async def console_create_claim(
     log_claim_event(
         claim_id,
         "claim_created",
-        f"Claim created for {claimant_name.strip()} ({color.strip()} {make.strip()} {model.strip()})",
+        f"Claim created for {claimant_name.strip()} ({v_color} {v_make} {v_model}, Policy {pol_num})",
     )
 
     capture_url = str(request.url_for("capture_page", token=token))
@@ -971,7 +1139,7 @@ async def submit_capture(request: Request, token: str):
                         detail=f"Photos for all requested slots ({', '.join(requested_slots)}) are required before submitting.",
                     )
                 r2_map[s] = s_photo
-        for slot in VALID_SLOTS:
+        for slot in REQUIRED_SLOTS:
             if slot in requested_slots:
                 latest_photos[slot] = r2_map[slot]
             else:
@@ -991,17 +1159,13 @@ async def submit_capture(request: Request, token: str):
                         detail=f"Missing photo for slot {slot}.",
                     )
                 latest_photos[slot] = prior_photo
+        for row in photos_rows:
+            if row["slot"] not in latest_photos:
+                latest_photos[row["slot"]] = row
     else:
         for row in photos_rows:
             if row["slot"] not in latest_photos:
                 latest_photos[row["slot"]] = row
-
-        if not all(slot in latest_photos for slot in VALID_SLOTS):
-            conn.close()
-            raise HTTPException(
-                status_code=400,
-                detail="All four slots (wide, damage, plate, vin) are required before submitting.",
-            )
 
     claim = conn.execute(
         "SELECT * FROM claims WHERE id = ?", (session["claim_id"],)
@@ -1026,16 +1190,53 @@ async def submit_capture(request: Request, token: str):
         except Exception:
             body_data = {}
 
+    answers_dict: dict[str, Any] = {}
+    if "answers_json" in claim.keys() and claim["answers_json"]:
+        try:
+            answers_dict = json.loads(claim["answers_json"])
+        except Exception:
+            answers_dict = {}
+    if "answers" in body_data and isinstance(body_data["answers"], dict):
+        body_answers = dict(body_data["answers"])
+        if "other-vehicle" in body_answers and "other_vehicle" not in body_answers:
+            body_answers["other_vehicle"] = body_answers["other-vehicle"]
+        for k, v in body_answers.items():
+            if v is not None:
+                answers_dict[k] = v
+    elif not answers_dict and claim["claimant_statement"]:
+        answers_dict = {
+            "statement": claim["claimant_statement"],
+            "parts": [claim["claimed_damage_area"]] if claim["claimed_damage_area"] else [],
+        }
+
+    skipped_slots = {}
+    if "skipped_slots" in answers_dict and isinstance(answers_dict["skipped_slots"], dict):
+        skipped_slots.update(answers_dict["skipped_slots"])
+    if "skipped_slots" in body_data and isinstance(body_data["skipped_slots"], dict):
+        skipped_slots.update(body_data["skipped_slots"])
+    if "answers" in body_data and isinstance(body_data["answers"], dict) and "skipped_slots" in body_data["answers"]:
+        if isinstance(body_data["answers"]["skipped_slots"], dict):
+            skipped_slots.update(body_data["answers"]["skipped_slots"])
+
+    if not is_recapture:
+        missing_required = []
+        for slot in REQUIRED_SLOTS:
+            if slot not in latest_photos:
+                reason = skipped_slots.get(slot)
+                if not reason or not isinstance(reason, str) or len(reason.strip()) < 10:
+                    missing_required.append(slot)
+
+        if missing_required:
+            conn.close()
+            raise HTTPException(
+                status_code=400,
+                detail=f"All four slots (wide, damage, plate, vin) are required before submitting. Missing: {', '.join(missing_required)}.",
+            )
+
     if is_recapture:
         signer_name = claim["signer_name"] or claim["claimant_name"] or "Claimant"
         signature_str = claim["signature_image"] or ""
         sig_sha256 = claim["signature"][:32] if claim["signature"] else ""
-        answers_dict: dict[str, Any] = {}
-        if "answers_json" in claim.keys() and claim["answers_json"]:
-            try:
-                answers_dict = json.loads(claim["answers_json"])
-            except Exception:
-                answers_dict = {}
         claimed_area = claim["claimed_damage_area"]
     else:
         signer_name = (
@@ -1087,25 +1288,6 @@ async def submit_capture(request: Request, token: str):
 
         sig_sha256 = hashlib.sha256(sig_bytes).hexdigest()
 
-        answers_dict: dict[str, Any] = {}
-        if "answers_json" in claim.keys() and claim["answers_json"]:
-            try:
-                answers_dict = json.loads(claim["answers_json"])
-            except Exception:
-                answers_dict = {}
-        if "answers" in body_data and isinstance(body_data["answers"], dict):
-            body_answers = dict(body_data["answers"])
-            if "other-vehicle" in body_answers and "other_vehicle" not in body_answers:
-                body_answers["other_vehicle"] = body_answers["other-vehicle"]
-            for k, v in body_answers.items():
-                if v is not None:
-                    answers_dict[k] = v
-        elif not answers_dict and claim["claimant_statement"]:
-            answers_dict = {
-                "statement": claim["claimant_statement"],
-                "parts": [claim["claimed_damage_area"]] if claim["claimed_damage_area"] else [],
-            }
-
         if not answers_dict:
             conn.close()
             raise HTTPException(status_code=400, detail="Answers are required before submitting.")
@@ -1118,11 +1300,10 @@ async def submit_capture(request: Request, token: str):
     # Reconstruct readings
     readings: dict[str, Any] = {}
     photo_hashes: dict[str, str] = {}
-    for slot in VALID_SLOTS:
-        row = latest_photos[slot]
+    for slot, row in latest_photos.items():
         photo_hashes[slot] = row["sha256"]
         r_json = row["reading_json"]
-        if r_json:
+        if r_json and slot in SLOT_SCHEMAS:
             try:
                 readings[slot] = SLOT_SCHEMAS[slot].model_validate_json(r_json)
             except Exception:
@@ -1136,16 +1317,37 @@ async def submit_capture(request: Request, token: str):
     elif claim["claimed_damage_area"]:
         claimed_parts_list = [claim["claimed_damage_area"]]
 
+    policy_snapshot = {}
+    if "policy_snapshot_json" in claim.keys() and claim["policy_snapshot_json"]:
+        try:
+            policy_snapshot = json.loads(claim["policy_snapshot_json"])
+        except Exception:
+            policy_snapshot = {}
+
     policy = Policy(
+        policy_number=claim["policy_number"] if "policy_number" in claim.keys() and claim["policy_number"] else policy_snapshot.get("policy_number"),
+        insured_name=claim["claimant_name"] if claim["claimant_name"] else policy_snapshot.get("insured_name"),
+        vehicle_year=claim["vehicle_year"] if "vehicle_year" in claim.keys() and claim["vehicle_year"] else policy_snapshot.get("vehicle_year"),
         make=claim["make"],
         model=claim["model"],
         color=claim["color"],
         plate=claim["plate"],
         state=claim["state"],
+        vin=claim["vin"] if "vin" in claim.keys() and claim["vin"] else policy_snapshot.get("vin"),
+        collision=bool(policy_snapshot.get("collision", False)),
+        comprehensive=bool(policy_snapshot.get("comprehensive", False)),
+        liability_only=bool(policy_snapshot.get("liability_only", False)),
+        deductible=int(policy_snapshot.get("deductible", 500)),
+        lienholder=policy_snapshot.get("lienholder"),
+        effective_date=policy_snapshot.get("effective_date"),
+        expiry_date=policy_snapshot.get("expiry_date"),
+        loss_date=answers_dict.get("date"),
+        incident_type=answers_dict.get("incident_type"),
         claimant_name=claim["claimant_name"],
         claimant_statement=claim["claimant_statement"],
         claimed_damage_area=claimed_area,
         claimed_parts=claimed_parts_list,
+        skipped_slots=skipped_slots,
     )
 
     reused_photos: dict[str, str] = {}
@@ -1167,7 +1369,8 @@ async def submit_capture(request: Request, token: str):
             if r_row["sha256"] not in reused_photos:
                 reused_photos[r_row["sha256"]] = r_row["claim_id"]
 
-    findings = run_checks(policy, readings, photos=photo_hashes, reused_photos=reused_photos)
+    has_policy = bool(policy.policy_number or policy.effective_date or policy_snapshot)
+    findings = run_checks(policy, readings, photos=photo_hashes, reused_photos=reused_photos, include_coverage=has_policy)
     now_iso = datetime.now(timezone.utc).isoformat()
 
     try:
@@ -1465,23 +1668,79 @@ async def claim_report(request: Request, id: str):
             logger.exception("Provider error generating summary for report: %s", exc)
             ai_summary = None
 
-    group_definitions = [
-        {
-            "id": "vehicle_and_plate",
-            "name": "Vehicle and plate",
-            "checks": ["plate_match", "vehicle_match", "vin_format"],
-        },
-        {
-            "id": "damage",
-            "name": "Damage",
-            "checks": ["damage_present", "damage_location", "parts_match"],
-        },
-        {
-            "id": "photo_integrity",
-            "name": "Photo integrity",
-            "checks": ["duplicate_photo", "photo_reused"],
-        },
-    ]
+    policy_snapshot = {}
+    if "policy_snapshot_json" in claim.keys() and claim["policy_snapshot_json"]:
+        try:
+            policy_snapshot = json.loads(claim["policy_snapshot_json"])
+        except Exception:
+            policy_snapshot = {}
+    if not policy_snapshot and "policy_number" in claim.keys() and claim["policy_number"]:
+        p_row = conn.execute("SELECT * FROM policies WHERE policy_number = ?", (claim["policy_number"],)).fetchone()
+        if p_row:
+            policy_snapshot = dict(p_row)
+
+    claim_policy = policy_snapshot
+
+    if claim_policy.get("collision") and claim_policy.get("comprehensive"):
+        coverage_display_str = "Collision + Comprehensive"
+    elif claim_policy.get("collision"):
+        coverage_display_str = "Collision"
+    elif claim_policy.get("comprehensive"):
+        coverage_display_str = "Comprehensive"
+    elif claim_policy.get("liability_only"):
+        coverage_display_str = "Liability only"
+    else:
+        coverage_display_str = "Collision"
+
+    has_policy = bool(
+        ("policy_number" in claim.keys() and claim["policy_number"])
+        or ("policy_snapshot_json" in claim.keys() and claim["policy_snapshot_json"])
+        or any(f["check_name"] in ("policy_active", "coverage_applies", "vin_match") for f in findings_rows)
+    )
+
+    if has_policy:
+        group_definitions = [
+            {
+                "id": "coverage_and_vehicle",
+                "name": "Coverage and vehicle",
+                "checks": [
+                    "policy_active",
+                    "coverage_applies",
+                    "plate_match",
+                    "vehicle_match",
+                    "vin_format",
+                    "vin_match",
+                ],
+            },
+            {
+                "id": "damage",
+                "name": "Damage",
+                "checks": ["damage_present", "damage_location", "parts_match"],
+            },
+            {
+                "id": "photo_integrity",
+                "name": "Photo integrity",
+                "checks": ["duplicate_photo", "photo_reused", "photo_skipped"],
+            },
+        ]
+    else:
+        group_definitions = [
+            {
+                "id": "vehicle_and_plate",
+                "name": "Vehicle and plate",
+                "checks": ["plate_match", "vehicle_match", "vin_format"],
+            },
+            {
+                "id": "damage",
+                "name": "Damage",
+                "checks": ["damage_present", "damage_location", "parts_match"],
+            },
+            {
+                "id": "photo_integrity",
+                "name": "Photo integrity",
+                "checks": ["duplicate_photo", "photo_reused"],
+            },
+        ]
 
     severity_order = {"red": 0, "amber": 1, "unchecked": 2, "green": 3}
 
@@ -1494,6 +1753,9 @@ async def claim_report(request: Request, id: str):
             if f_row:
                 seen_checks.add(chk)
                 g_findings.append(f_row)
+
+        if not g_findings:
+            continue
 
         g_findings.sort(key=lambda f: severity_order.get(f["status"], 99))
 
@@ -1511,14 +1773,18 @@ async def claim_report(request: Request, id: str):
             g_status = "green"
             g_status_label = "Match"
 
-        raw_groups.append({
+        grp_dict = {
             "id": g_def["id"],
             "name": g_def["name"],
             "findings": g_findings,
             "worst_sev": worst_sev,
             "status": g_status,
             "status_label": g_status_label,
-        })
+        }
+        if g_def["id"] == "coverage_and_vehicle":
+            grp_dict["summary_line"] = build_coverage_summary_line(claim_policy, g_findings)
+
+        raw_groups.append(grp_dict)
 
     other_findings = [f for f in findings_rows if f["check_name"] not in seen_checks]
     if other_findings:
@@ -1546,7 +1812,13 @@ async def claim_report(request: Request, id: str):
             "status_label": o_label,
         })
 
-    raw_groups.sort(key=lambda g: g["worst_sev"])
+    if has_policy:
+        cov_group = next((g for g in raw_groups if g["id"] == "coverage_and_vehicle"), None)
+        remaining_groups = [g for g in raw_groups if g["id"] != "coverage_and_vehicle"]
+        remaining_groups.sort(key=lambda g: g["worst_sev"])
+        raw_groups = ([cov_group] if cov_group else []) + remaining_groups
+    else:
+        raw_groups.sort(key=lambda g: g["worst_sev"])
 
     all_numbered_findings = []
     groups = []
@@ -1577,6 +1849,7 @@ async def claim_report(request: Request, id: str):
             "findings": numbered_findings,
             "status": g["status"],
             "status_label": g["status_label"],
+            "summary_line": g.get("summary_line"),
         })
 
     sha_to_slots: dict[str, list[str]] = {}
@@ -1697,6 +1970,24 @@ async def claim_report(request: Request, id: str):
         or ("previous_signature" in claim.keys() and bool(claim["previous_signature"]))
     )
 
+    odometer_as_read = None
+    if "odometer" in photos and photos["odometer"]["reading_json"]:
+        try:
+            odo_data = json.loads(photos["odometer"]["reading_json"])
+            if odo_data.get("miles") is not None:
+                odometer_as_read = f"{odo_data.get('miles'):,} mi"
+            elif not odo_data.get("readable"):
+                odometer_as_read = "Unreadable"
+        except Exception:
+            odometer_as_read = None
+
+    total_reviewable = len([f for f in findings_rows if f["status"] in ("red", "amber")])
+    reviewed_count = len([
+        f for f in findings_rows
+        if f["status"] in ("red", "amber")
+        and ("adjuster_label" in f.keys() and f["adjuster_label"] in ("confirm", "false_alarm"))
+    ])
+
     return templates.TemplateResponse(
         request=request,
         name="console_claim.html",
@@ -1735,6 +2026,11 @@ async def claim_report(request: Request, id: str):
             "claim_notes": claim_notes,
             "timeline_events": timeline_events,
             "is_round_2": is_round_2,
+            "claim_policy": claim_policy,
+            "coverage_display_str": coverage_display_str,
+            "odometer_as_read": odometer_as_read,
+            "total_reviewable": total_reviewable,
+            "reviewed_count": reviewed_count,
         },
     )
 

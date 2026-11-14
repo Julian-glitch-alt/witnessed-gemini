@@ -6,11 +6,37 @@
 <div class="card-panel form-card">
   <div style="margin-bottom: 24px;">
     <h1 style="font-size: 1.6rem; font-weight: 800; color: var(--ink); margin-bottom: 4px;">New Capture Link</h1>
-    <p style="font-size: 0.88rem; color: var(--mute);">Enter policy and claimant details to generate a verified photo evidence link</p>
+    <p style="font-size: 0.88rem; color: var(--mute);">Select a policy or enter your own car details to generate a verified photo evidence link</p>
   </div>
 
   <form action="/console/new" method="post">
-    <!-- Group 1: Claimant -->
+    <!-- Group 1: Policy Selection -->
+    <div class="form-section-header">Policy record</div>
+
+    <div class="form-group">
+      <label for="policy_picker">Policy on file</label>
+      <select id="policy_picker" name="policy_picker" class="form-control" onchange="onPolicyChange()">
+        {% for p in policies %}
+          <option value="{{ p.policy_number }}"
+                  data-year="{{ p.vehicle_year }}"
+                  data-make="{{ p.vehicle_make }}"
+                  data-model="{{ p.vehicle_model }}"
+                  data-color="{{ p.vehicle_color }}"
+                  data-plate="{{ p.plate }}"
+                  data-state="{{ p.state }}"
+                  data-vin="{{ p.vin or '' }}"
+                  data-insured="{{ p.insured_name }}">
+            {{ p.policy_number }} &mdash; {{ p.insured_name }}: {{ p.vehicle_year }} {{ p.vehicle_color }} {{ p.vehicle_make }} {{ p.vehicle_model }} ({{ p.plate }} {{ p.state }}) - {% if p.liability_only %}Liability only{% elif p.collision and p.comprehensive %}Collision + Comp (${{ p.deductible }}){% elif p.collision %}Collision (${{ p.deductible }}){% else %}Comp (${{ p.deductible }}){% endif %}{% if p.policy_number == 'DEMO-AUTO-1004' %} &bull; Expired{% endif %}
+          </option>
+        {% endfor %}
+        <option value="custom">New policy from your own car</option>
+      </select>
+      <div id="custom_car_note" style="display: none; margin-top: 6px; font-size: 0.8rem; color: #0f6b52;">
+        Creates a trial policy with Collision + Comprehensive coverage ($500 deductible), active for one year.
+      </div>
+    </div>
+
+    <!-- Group 2: Claimant -->
     <div class="form-section-header">Claimant</div>
 
     <div class="form-grid-2">
@@ -33,36 +59,45 @@
 
     <div class="form-group">
       <label for="claimant_statement">Claimant Statement (optional)</label>
-      <textarea id="claimant_statement" name="claimant_statement" class="form-control" rows="3" placeholder="Optional initial statement; claimant's answers will override."></textarea>
+      <textarea id="claimant_statement" name="claimant_statement" class="form-control" rows="2" placeholder="Optional initial statement; claimant's answers will override."></textarea>
     </div>
 
-    <!-- Group 2: Policy vehicle -->
-    <div class="form-section-header">Policy vehicle</div>
+    <!-- Group 3: Policy vehicle -->
+    <div class="form-section-header">Vehicle details</div>
 
-    <div class="form-grid-2">
+    <div class="form-grid-3">
+      <div class="form-group">
+        <label for="year">Year</label>
+        <input type="number" id="year" name="year" class="form-control" placeholder="e.g. 2020">
+      </div>
       <div class="form-group">
         <label for="make">Make</label>
-        <input type="text" id="make" name="make" class="form-control" placeholder="e.g. Toyota" required>
+        <input type="text" id="make" name="make" class="form-control" placeholder="e.g. Toyota">
       </div>
       <div class="form-group">
         <label for="model">Model</label>
-        <input type="text" id="model" name="model" class="form-control" placeholder="e.g. Camry" required>
+        <input type="text" id="model" name="model" class="form-control" placeholder="e.g. Camry">
       </div>
     </div>
 
     <div class="form-grid-3">
       <div class="form-group">
         <label for="color">Color</label>
-        <input type="text" id="color" name="color" class="form-control" placeholder="e.g. Blue" required>
+        <input type="text" id="color" name="color" class="form-control" placeholder="e.g. Blue">
       </div>
       <div class="form-group">
         <label for="plate">License Plate</label>
-        <input type="text" id="plate" name="plate" class="form-control" placeholder="e.g. 7XYZ123" required>
+        <input type="text" id="plate" name="plate" class="form-control" placeholder="e.g. 7XYZ123">
       </div>
       <div class="form-group">
         <label for="state">State</label>
-        <input type="text" id="state" name="state" class="form-control" placeholder="e.g. CA" maxlength="2" required>
+        <input type="text" id="state" name="state" class="form-control" placeholder="e.g. CA" maxlength="2">
       </div>
+    </div>
+
+    <div class="form-group">
+      <label for="vin">VIN (optional)</label>
+      <input type="text" id="vin" name="vin" class="form-control" placeholder="e.g. 1HGCM82633A004352" maxlength="17">
     </div>
 
     <div style="margin-top: 24px; display: flex; justify-content: flex-end; gap: 12px;">
@@ -71,4 +106,39 @@
     </div>
   </form>
 </div>
+
+<script>
+function onPolicyChange() {
+  const sel = document.getElementById('policy_picker');
+  if (!sel) return;
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt) return;
+  if (opt.value === 'custom') {
+    document.getElementById('year').value = '2023';
+    document.getElementById('make').value = '';
+    document.getElementById('model').value = '';
+    document.getElementById('color').value = '';
+    document.getElementById('plate').value = '';
+    document.getElementById('state').value = '';
+    document.getElementById('vin').value = '';
+    document.getElementById('custom_car_note').style.display = 'block';
+  } else if (opt.dataset) {
+    document.getElementById('year').value = opt.dataset.year || '';
+    document.getElementById('make').value = opt.dataset.make || '';
+    document.getElementById('model').value = opt.dataset.model || '';
+    document.getElementById('color').value = opt.dataset.color || '';
+    document.getElementById('plate').value = opt.dataset.plate || '';
+    document.getElementById('state').value = opt.dataset.state || '';
+    document.getElementById('vin').value = opt.dataset.vin || '';
+    const claimantInput = document.getElementById('claimant_name');
+    if (!claimantInput.value.trim() && opt.dataset.insured) {
+      claimantInput.value = opt.dataset.insured;
+    }
+    document.getElementById('custom_car_note').style.display = 'none';
+  }
+}
+document.addEventListener('DOMContentLoaded', () => {
+  onPolicyChange();
+});
+</script>
 {% endblock %}

@@ -34,6 +34,8 @@ def test_seed_creates_four_claims_and_finishes_flow():
         assert c_map[cid]["status"] == "ready_for_review"
         assert c_map[cid]["package_bytes"] is not None
         assert c_map[cid]["signature"] is not None
+        assert c_map[cid]["signer_name"] == c_map[cid]["claimant_name"]
+        assert c_map[cid]["signature_image"].startswith("data:image/png;base64,")
 
     # Claim (a) is all green
     findings_a = conn.execute(

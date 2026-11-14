@@ -9,6 +9,20 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .retake-highlight {
+      background: #fef08a !important;
+      border: 1.5px solid #ca8a04 !important;
+      color: #713f12 !important;
+      font-weight: 700 !important;
+      padding: 4px 10px !important;
+      border-radius: 6px !important;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
+    }
+    .btn-retake-link {
+      cursor: pointer;
+    }
+  </style>
 </head>
 <body class="capture-flow-body">
 
@@ -559,6 +573,26 @@
           </button>
         </div>
       </div>
+
+      <!-- 5 Odometer -->
+      <div class="photo-card" id="card-slot-odometer">
+        <div class="photo-card-top">
+          <div class="photo-num-badge" id="badge-slot-odometer">5</div>
+          <div class="photo-card-info">
+            <div class="photo-card-title-row">
+              <span class="photo-card-title">Odometer</span>
+              <span class="photo-tag-opt" style="font-size: 0.72rem; padding: 2px 8px; border-radius: 12px; background: #f1f5f9; color: #475569; font-weight: 600;">Optional</span>
+            </div>
+            <div class="photo-card-hint">Odometer (optional): switch on the ignition and photograph the odometer reading.</div>
+          </div>
+        </div>
+
+        <div id="action-slot-odometer">
+          <button type="button" class="btn-take-photo-green" onclick="openCamera('odometer')">
+            📷 Take photo
+          </button>
+        </div>
+      </div>
     </section>
 
     <!-- STEP 5: Check -->
@@ -814,10 +848,29 @@ const SLOT_CONFIGS = {
     hint: "Step back so the whole vehicle is in the photo.",
     guideClass: "guide-wide",
     guideHint: "Align whole vehicle inside the frame"
+  },
+  odometer: {
+    num: 5,
+    title: "Odometer",
+    hint: "Switch on the ignition and photograph the odometer reading.",
+    guideClass: "guide-plate",
+    guideHint: "Center odometer reading in the frame"
   }
 };
 
-const ORDERED_SLOTS = ["plate", "vin", "damage", "wide"];
+const REQUIRED_SLOTS = ["plate", "vin", "damage", "wide"];
+const ALL_SLOTS = ["plate", "vin", "damage", "wide", "odometer"];
+const ORDERED_SLOTS = ALL_SLOTS;
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 // State
 let currentStep = 0;
@@ -833,21 +886,24 @@ let answers = {
   police: null,
   drivable: null,
   parts: [],
-  other_parts_note: ""
+  other_parts_note: "",
+  skipped_slots: {}
 };
 
 let photos = {
   plate: null,
   vin: null,
   damage: null,
-  wide: null
+  wide: null,
+  odometer: null
 };
 
 let retakeCounts = {
   plate: 0,
   vin: 0,
   damage: 0,
-  wide: 0
+  wide: 0,
+  odometer: 0
 };
 
 // Populate existing data from server
@@ -1094,26 +1150,38 @@ function validateStep3() {
 
 // STEP 4: Photos UI & Progress
 function updatePhotosUI() {
+  answers.skipped_slots = answers.skipped_slots || {};
   let doneCount = 0;
-  ORDERED_SLOTS.forEach(slot => {
+
+  REQUIRED_SLOTS.forEach(slot => {
+    if ((photos[slot] && photos[slot].sha256) || answers.skipped_slots[slot]) {
+      doneCount++;
+    }
+  });
+
+  ALL_SLOTS.forEach(slot => {
     const card = document.getElementById(`card-slot-${slot}`);
     const badge = document.getElementById(`badge-slot-${slot}`);
     const action = document.getElementById(`action-slot-${slot}`);
+    if (!card || !badge || !action) return;
+
     const photo = photos[slot];
+    const isSkipped = !!answers.skipped_slots[slot];
+    const isRequired = REQUIRED_SLOTS.includes(slot);
 
     if (photo && photo.sha256) {
-      doneCount++;
       badge.classList.add('done');
       badge.textContent = "✓";
 
       const isRead = photo.status === 'read';
       const statusHtml = isRead
         ? `<div class="status-badge-green">✓ Looks good</div>`
-        : `<div class="status-badge-amber">⚠ We couldn't read this. Retake it?</div>`;
+        : `<div class="status-badge-amber">We couldn't read this. Retake it?</div>`;
 
       const retakesLeft = Math.max(0, 3 - (retakeCounts[slot] || 0));
+      const highlightClass = (!isRead && retakesLeft > 0) ? " retake-highlight" : "";
       const retakeBtnHtml = (retakesLeft > 0)
-        ? `<button type="button" class="btn-retake-link" onclick="openCamera('${slot}')">Retake (${retakesLeft} left)</button>`
+        ? `<button type="button" class="btn-retake-link${highlightClass}" onclick="openCamera('${slot}')">Retake (${retakesLeft} left)</button>`
         : `<span style="font-size: 12px; color: #94a3b8;">No retakes left</span>`;
 
       action.innerHTML = `
@@ -1125,13 +1193,39 @@ function updatePhotosUI() {
           </div>
         </div>
       `;
+    } else if (isSkipped) {
+      badge.classList.add('done');
+      badge.textContent = "✓";
+      const reason = answers.skipped_slots[slot];
+      action.innerHTML = `
+        <div class="photo-card-skipped-msg" style="color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px 12px; font-size: 0.82rem;">
+          <div style="font-weight: 600; margin-bottom: 4px;">Skipped: ${escapeHtml(reason)}</div>
+          <button type="button" onclick="undoSkip('${slot}')" style="background: none; border: none; padding: 0; font-size: 0.78rem; color: #b45309; text-decoration: underline; cursor: pointer;">Change or take photo instead</button>
+        </div>
+      `;
     } else {
       badge.classList.remove('done');
       badge.textContent = SLOT_CONFIGS[slot].num;
+      const skipHtml = isRequired ? `
+        <div class="skip-slot-wrap" style="margin-top: 8px;">
+          <button type="button" class="skip-slot-link" onclick="toggleSkipBox('${slot}')" style="background: none; border: none; padding: 0; font-size: 0.78rem; color: #64748b; text-decoration: underline; cursor: pointer;">Skip with a reason</button>
+          <div id="skip-box-${slot}" class="skip-box" style="display: none; margin-top: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+            <div style="font-size: 0.76rem; color: #475569; margin-bottom: 4px; font-weight: 500;">Why are you skipping this photo?</div>
+            <textarea id="skip-reason-${slot}" class="form-control" rows="2" placeholder="Tell us why this photo cannot be taken (minimum 10 characters)..." style="font-size: 0.8rem; width: 100%; box-sizing: border-box; padding: 6px; border-radius: 6px; border: 1px solid #cbd5e1;" oninput="validateSkipReason('${slot}')"></textarea>
+            <div id="skip-err-${slot}" style="display: none; font-size: 0.74rem; color: #ef4444; margin-top: 4px;">Reason must be at least 10 characters.</div>
+            <div style="display: flex; gap: 8px; margin-top: 8px;">
+              <button type="button" id="btn-skip-confirm-${slot}" disabled onclick="confirmSkip('${slot}')" style="font-size: 0.78rem; padding: 4px 12px; background: #0f6b52; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; opacity: 0.5;">Confirm skip</button>
+              <button type="button" onclick="toggleSkipBox('${slot}')" style="font-size: 0.78rem; padding: 4px 8px; background: transparent; border: none; color: #64748b; cursor: pointer;">Cancel</button>
+            </div>
+          </div>
+        </div>
+      ` : '';
+
       action.innerHTML = `
         <button type="button" class="btn-take-photo-green" onclick="openCamera('${slot}')">
           📷 Take photo
         </button>
+        ${skipHtml}
       `;
     }
   });
@@ -1142,9 +1236,54 @@ function updatePhotosUI() {
 }
 
 function validateStep4() {
-  const allFourDone = ORDERED_SLOTS.every(s => photos[s] && photos[s].sha256);
+  answers.skipped_slots = answers.skipped_slots || {};
+  const allFourDone = REQUIRED_SLOTS.every(s => (photos[s] && photos[s].sha256) || answers.skipped_slots[s]);
   const btn = document.getElementById('btn-continue');
   btn.disabled = !allFourDone;
+}
+
+function toggleSkipBox(slot) {
+  const box = document.getElementById(`skip-box-${slot}`);
+  if (box) {
+    box.style.display = box.style.display === 'none' ? 'block' : 'none';
+  }
+}
+
+function validateSkipReason(slot) {
+  const txt = document.getElementById(`skip-reason-${slot}`).value.trim();
+  const btn = document.getElementById(`btn-skip-confirm-${slot}`);
+  const err = document.getElementById(`skip-err-${slot}`);
+  if (txt.length >= 10) {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    if (err) err.style.display = 'none';
+  } else {
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+  }
+}
+
+async function confirmSkip(slot) {
+  const input = document.getElementById(`skip-reason-${slot}`);
+  const reason = input ? input.value.trim() : '';
+  if (reason.length < 10) {
+    const err = document.getElementById(`skip-err-${slot}`);
+    if (err) err.style.display = 'block';
+    return;
+  }
+  answers.skipped_slots = answers.skipped_slots || {};
+  answers.skipped_slots[slot] = reason;
+  photos[slot] = null;
+  await syncAnswersToServer();
+  updatePhotosUI();
+}
+
+async function undoSkip(slot) {
+  if (answers.skipped_slots && answers.skipped_slots[slot]) {
+    delete answers.skipped_slots[slot];
+    await syncAnswersToServer();
+    updatePhotosUI();
+  }
 }
 
 // Camera Handling (getUserMedia)
@@ -1425,16 +1564,29 @@ function populateCheckStep() {
   const checklist = document.getElementById('check-checklist');
   let items = [];
 
-  ORDERED_SLOTS.forEach(slot => {
+  REQUIRED_SLOTS.forEach(slot => {
     const p = photos[slot];
     const cfg = SLOT_CONFIGS[slot];
-    if (p && p.status === 'read') {
+    if (answers.skipped_slots && answers.skipped_slots[slot]) {
+      items.push(`<div class="check-line amber">⚠ Skipped: ${escapeHtml(answers.skipped_slots[slot])}</div>`);
+    } else if (p && p.status === 'read') {
       items.push(`<div class="check-line green">✓ ${cfg.title} looks good</div>`);
     } else {
       items.push(`<div class="check-line amber">⚠ We couldn't read ${cfg.title.toLowerCase()}</div>`);
     }
   });
-  items.push(`<div class="check-line green">✓ 4 of 4 required photos taken live</div>`);
+
+  if (photos['odometer'] && photos['odometer'].sha256) {
+    const odoP = photos['odometer'];
+    if (odoP.status === 'read') {
+      items.push(`<div class="check-line green">✓ Odometer looks good</div>`);
+    } else {
+      items.push(`<div class="check-line amber">⚠ We couldn't read odometer</div>`);
+    }
+  }
+
+  const reqDone = REQUIRED_SLOTS.filter(s => (photos[s] && photos[s].sha256) || (answers.skipped_slots && answers.skipped_slots[s])).length;
+  items.push(`<div class="check-line green">✓ ${reqDone} of 4 required slots completed</div>`);
   checklist.innerHTML = items.join('');
 
   // What happened review
@@ -1451,13 +1603,19 @@ function populateCheckStep() {
 
   // Photos thumbnails
   const thumbsGrid = document.getElementById('rev-photos-grid');
-  thumbsGrid.innerHTML = ORDERED_SLOTS.map(slot => {
+  let thumbs = [];
+  REQUIRED_SLOTS.forEach(slot => {
     const p = photos[slot];
     if (p && p.sha256) {
-      return `<img src="/photos/${p.sha256}" alt="${slot}" class="review-single-thumb">`;
+      thumbs.push(`<img src="/photos/${p.sha256}" alt="${slot}" class="review-single-thumb">`);
+    } else if (answers.skipped_slots && answers.skipped_slots[slot]) {
+      thumbs.push(`<div class="review-single-thumb skipped" style="width: 60px; height: 60px; background: #fffbeb; border: 1px solid #fde68a; color: #b45309; font-size: 10px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 4px; border-radius: 6px;">Skipped: ${escapeHtml(answers.skipped_slots[slot])}</div>`);
     }
-    return '';
-  }).join('');
+  });
+  if (photos['odometer'] && photos['odometer'].sha256) {
+    thumbs.push(`<img src="/photos/${photos['odometer'].sha256}" alt="odometer" class="review-single-thumb">`);
+  }
+  thumbsGrid.innerHTML = thumbs.join('');
 }
 
 function validateStep5() {

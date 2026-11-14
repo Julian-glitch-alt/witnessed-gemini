@@ -1,3 +1,4 @@
+import base64
 import io
 import re
 from typing import Any
@@ -20,6 +21,22 @@ def make_jpeg(label: str, color: tuple[int, int, int]) -> bytes:
     return buf.getvalue()
 
 
+def make_signature_png() -> str:
+    img = Image.new("RGBA", (300, 100), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(img)
+    points = [
+        (20, 60), (45, 25), (60, 75), (75, 30), (95, 65),
+        (115, 40), (135, 55), (155, 30), (180, 65), (200, 35),
+        (225, 60), (250, 40), (275, 65), (290, 70)
+    ]
+    for i in range(len(points) - 1):
+        draw.line([points[i], points[i + 1]], fill=(15, 23, 42, 255), width=3)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
+
 def _create_claim_and_token(client: TestClient, form_data: dict[str, str]) -> tuple[str, str]:
     resp = client.post("/console/new", data=form_data)
     if resp.status_code != 200:
@@ -40,11 +57,6 @@ def _create_claim_and_token(client: TestClient, form_data: dict[str, str]) -> tu
     claim_id = match_claim.group(0)
 
     return claim_id, token
-
-
-SAMPLE_SIG = (
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-)
 
 
 def _upload_photos_and_submit(
@@ -84,7 +96,7 @@ def _upload_photos_and_submit(
         json={
             "signer_name": signer_name,
             "confirmed": True,
-            "signature": SAMPLE_SIG,
+            "signature": make_signature_png(),
             "answers": ans,
         },
         headers={"Accept": "application/json"},
@@ -152,7 +164,7 @@ def seed() -> list[str]:
                 "claimed_damage_area": "rear",
             },
         )
-        _upload_photos_and_submit(client, token_a, images_a)
+        _upload_photos_and_submit(client, token_a, images_a, signer_name="Jane Doe")
         created_claim_ids.append(claim_a)
 
         # Case (b): "Wrong plate": plate reading 8ABC991 vs policy 7XYZ123 -> red
@@ -175,7 +187,7 @@ def seed() -> list[str]:
                 "claimed_damage_area": "rear",
             },
         )
-        _upload_photos_and_submit(client, token_b, images_b)
+        _upload_photos_and_submit(client, token_b, images_b, signer_name="Bob Miller")
         created_claim_ids.append(claim_b)
 
         # Case (c): "Wrong side": claimed rear, damage read as front -> amber
@@ -216,7 +228,7 @@ def seed() -> list[str]:
                 "claimed_damage_area": "rear",
             },
         )
-        _upload_photos_and_submit(client, token_c, images_c)
+        _upload_photos_and_submit(client, token_c, images_c, signer_name="Alice Brown")
         created_claim_ids.append(claim_c)
 
         # Case (d): "Reused photo": damage photo byte-identical to Claim (a)'s damage photo -> photo_reused red
@@ -236,7 +248,7 @@ def seed() -> list[str]:
                 "claimed_damage_area": "rear",
             },
         )
-        _upload_photos_and_submit(client, token_d, images_d)
+        _upload_photos_and_submit(client, token_d, images_d, signer_name="David Clark")
         created_claim_ids.append(claim_d)
 
         # Restore default provider factory

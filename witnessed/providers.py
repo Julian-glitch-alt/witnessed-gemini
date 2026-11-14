@@ -6,6 +6,7 @@ import httpx
 from witnessed.schemas import (
     VALID_PARTS,
     DamageReading,
+    OdometerReading,
     PlateReading,
     SummaryResult,
     VinReading,
@@ -17,6 +18,7 @@ SLOT_SCHEMAS: dict[str, type[Any]] = {
     "damage": DamageReading,
     "plate": PlateReading,
     "vin": VinReading,
+    "odometer": OdometerReading,
 }
 
 PARTS_VOCABULARY_STR = ", ".join(VALID_PARTS)
@@ -53,6 +55,12 @@ SLOT_PROMPTS: dict[str, str] = {
         "Read the vehicle identification number (VIN) from this photo. "
         "Indicate whether the VIN is readable."
     ),
+    "odometer": (
+        f"{SYSTEM_INSTRUCTION} "
+        "Read the vehicle odometer mileage from this photo. "
+        "Return miles as an integer (digits only, e.g. 42150) or null if unreadable. "
+        "Indicate whether the odometer mileage is readable."
+    ),
 }
 
 
@@ -62,7 +70,7 @@ class ReadingProvider(Protocol):
 
     def read(
         self, slot: str, image_bytes: bytes
-    ) -> WideReading | DamageReading | PlateReading | VinReading | None:
+    ) -> WideReading | DamageReading | PlateReading | VinReading | OdometerReading | None:
         ...
 
     def summarize(
@@ -179,6 +187,11 @@ class FakeProvider:
         elif slot == "vin":
             return VinReading(
                 vin="1HGCM82633A004352",
+                readable=True,
+            )
+        elif slot == "odometer":
+            return OdometerReading(
+                miles=42150,
                 readable=True,
             )
         return None

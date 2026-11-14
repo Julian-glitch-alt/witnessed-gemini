@@ -107,8 +107,20 @@
         <table class="paper-table">
           <tbody>
             <tr>
-              <td class="paper-lbl">Make & Model</td>
-              <td class="paper-val">{{ claim.make }} {{ claim.model }}</td>
+              <td class="paper-lbl">Policy number</td>
+              <td class="paper-val">{{ claim_policy.policy_number or claim.policy_number or "Not given" }}</td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">Year, Make & Model</td>
+              <td class="paper-val">{% if claim.vehicle_year or claim_policy.vehicle_year %}{{ claim.vehicle_year or claim_policy.vehicle_year }} {% endif %}{{ claim.make }} {{ claim.model }}</td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">Coverage</td>
+              <td class="paper-val">{{ coverage_display_str }}</td>
+            </tr>
+            <tr>
+              <td class="paper-lbl">Deductible</td>
+              <td class="paper-val">${{ claim_policy.deductible if claim_policy.deductible is defined else 500 }}</td>
             </tr>
             <tr>
               <td class="paper-lbl">Color</td>
@@ -124,6 +136,12 @@
                 {{ vin_as_read or "Pending / Unread" }}
               </td>
             </tr>
+            {% if odometer_as_read %}
+            <tr>
+              <td class="paper-lbl">Odometer</td>
+              <td class="paper-val">{{ odometer_as_read }}</td>
+            </tr>
+            {% endif %}
             <tr>
               <td class="paper-lbl">Can you drive it?</td>
               <td class="paper-val">{{ answers.drivable or "Not given" }}</td>
@@ -172,6 +190,8 @@
                  {% if photo_wide %}onclick="openPhotoModal('wide', '{{ photo_wide.sha256 }}', '{{ photo_wide.model or 'fake' }}', {{ (photo_wide.reading_json or '{}') | tojson }})"{% endif %}>
               {% if photo_wide %}
                 <img src="/photos/{{ photo_wide.sha256 }}" alt="Whole vehicle" class="paper-photo-img">
+              {% elif answers.skipped_slots and answers.skipped_slots.get('wide') %}
+                <div class="paper-photo-missing" style="color: #b45309; background: #fffbeb; font-weight: 500; padding: 12px 6px; font-size: 0.76rem;">Skipped: {{ answers.skipped_slots.get('wide') }}</div>
               {% else %}
                 <div class="paper-photo-missing">No photo yet</div>
               {% endif %}
@@ -191,6 +211,8 @@
                  {% if photo_damage %}onclick="openPhotoModal('damage', '{{ photo_damage.sha256 }}', '{{ photo_damage.model or 'fake' }}', {{ (photo_damage.reading_json or '{}') | tojson }})"{% endif %}>
               {% if photo_damage %}
                 <img src="/photos/{{ photo_damage.sha256 }}" alt="Damage close-up" class="paper-photo-img">
+              {% elif answers.skipped_slots and answers.skipped_slots.get('damage') %}
+                <div class="paper-photo-missing" style="color: #b45309; background: #fffbeb; font-weight: 500; padding: 12px 6px; font-size: 0.76rem;">Skipped: {{ answers.skipped_slots.get('damage') }}</div>
               {% else %}
                 <div class="paper-photo-missing">No photo yet</div>
               {% endif %}
@@ -210,6 +232,8 @@
                  {% if photo_plate %}onclick="openPhotoModal('plate', '{{ photo_plate.sha256 }}', '{{ photo_plate.model or 'fake' }}', {{ (photo_plate.reading_json or '{}') | tojson }})"{% endif %}>
               {% if photo_plate %}
                 <img src="/photos/{{ photo_plate.sha256 }}" alt="License plate" class="paper-photo-img">
+              {% elif answers.skipped_slots and answers.skipped_slots.get('plate') %}
+                <div class="paper-photo-missing" style="color: #b45309; background: #fffbeb; font-weight: 500; padding: 12px 6px; font-size: 0.76rem;">Skipped: {{ answers.skipped_slots.get('plate') }}</div>
               {% else %}
                 <div class="paper-photo-missing">No photo yet</div>
               {% endif %}
@@ -229,6 +253,8 @@
                  {% if photo_vin %}onclick="openPhotoModal('vin', '{{ photo_vin.sha256 }}', '{{ photo_vin.model or 'fake' }}', {{ (photo_vin.reading_json or '{}') | tojson }})"{% endif %}>
               {% if photo_vin %}
                 <img src="/photos/{{ photo_vin.sha256 }}" alt="VIN plate" class="paper-photo-img">
+              {% elif answers.skipped_slots and answers.skipped_slots.get('vin') %}
+                <div class="paper-photo-missing" style="color: #b45309; background: #fffbeb; font-weight: 500; padding: 12px 6px; font-size: 0.76rem;">Skipped: {{ answers.skipped_slots.get('vin') }}</div>
               {% else %}
                 <div class="paper-photo-missing">No photo yet</div>
               {% endif %}
@@ -240,6 +266,20 @@
               Figure 4. VIN plate, captured live at {{ submitted_date_str }}.
             </figcaption>
           </figure>
+
+          <!-- Figure 5: Odometer (odometer) -->
+          {% set photo_odo = photos.get('odometer') %}
+          {% if photo_odo %}
+          <figure class="paper-photo-figure">
+            <div class="paper-photo-box"
+                 onclick="openPhotoModal('odometer', '{{ photo_odo.sha256 }}', '{{ photo_odo.model or 'fake' }}', {{ (photo_odo.reading_json or '{}') | tojson }})">
+              <img src="/photos/{{ photo_odo.sha256 }}" alt="Odometer" class="paper-photo-img">
+            </div>
+            <figcaption class="paper-photo-caption">
+              Figure 5. Odometer reading{% if odometer_as_read %}: {{ odometer_as_read }}{% endif %}, captured live at {{ submitted_date_str }}.
+            </figcaption>
+          </figure>
+          {% endif %}
         </div>
       </section>
 
@@ -353,6 +393,12 @@
                 <span class="pill pill-gray">{{ group.status_label }}</span>
               {% endif %}
             </div>
+
+            {% if group.summary_line %}
+              <div class="group-summary-line" style="font-size: 0.84rem; color: var(--ink); margin: 6px 0 10px 0; line-height: 1.45; padding: 6px 10px; background: #f8fafc; border: 1px solid var(--line); border-radius: 6px;">
+                {{ group.summary_line }}
+              </div>
+            {% endif %}
 
             <div class="findings-items-list">
             {% if group.id == 'damage' %}
@@ -499,7 +545,9 @@
     <div class="card-panel decision-card">
       <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
         <div class="decision-card-title" style="margin-bottom: 0;">Your decision</div>
-        <div style="font-size: 0.76rem; color: var(--mute);">0 of 0 reviewed</div>
+        {% if total_reviewable > 0 %}
+          <div id="reviewed-count-text" style="font-size: 0.76rem; color: var(--mute);">{{ reviewed_count }} of {{ total_reviewable }} reviewed</div>
+        {% endif %}
       </div>
       <div style="font-size: 0.74rem; color: var(--mute); margin-bottom: 14px;">
         Activity: review verified evidence. Claimant {{ claim.claimant_name }}.
@@ -617,18 +665,6 @@
       <div class="report-files-title">Report files</div>
       <div class="report-file-row">
         <div>
-          <div style="font-weight: 600; color: var(--ink);">Original report</div>
-          <div style="color: var(--mute); font-size: 0.74rem;">Made {{ submitted_date_str }}, sent to the insurer</div>
-        </div>
-      </div>
-      <div class="report-file-row">
-        <div>
-          <div style="font-weight: 600; color: var(--ink);">Reviewed report</div>
-          <div style="color: var(--mute); font-size: 0.74rem;">Made when you decide</div>
-        </div>
-      </div>
-      <div class="report-file-row">
-        <div>
           <div style="font-weight: 600; color: var(--ink);">Sealed package</div>
           <div style="color: var(--mute); font-size: 0.74rem;">Anyone can check it on Verify</div>
         </div>
@@ -645,18 +681,12 @@
         </div>
         <a href="/verify" class="report-file-link">Verify</a>
       </div>
-      <div style="font-size: 0.74rem; color: var(--mute); margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
-        <span>Not delivered: pending (0 attempts)</span>
-        <button type="button" class="decision-sub-btn" style="padding: 3px 10px; font-size: 0.72rem;">Resend</button>
-      </div>
     </div>
 
     <!-- More Actions Card -->
     <div class="card-panel more-actions-card">
       <div style="font-weight: 700; font-size: 0.95rem; color: var(--ink); margin-bottom: 10px;">More actions</div>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-        <button type="button" class="decision-sub-btn" style="flex: 1; min-width: 90px; font-size: 0.76rem;">Resend the report</button>
-        <button type="button" class="decision-sub-btn" style="flex: 1; min-width: 80px; font-size: 0.76rem;">Delete media</button>
         <button type="button" class="decision-sub-btn" id="btn-toggle-timeline" onclick="toggleTimeline()" style="flex: 1; min-width: 110px; font-size: 0.76rem;">Show the timeline</button>
       </div>
 
@@ -758,9 +788,21 @@ async function labelFinding(claimId, checkName, labelValue, btn) {
     });
     if (resp.ok) {
       if (statusEl) {
+        const wasUnlabeled = !statusEl.classList.contains('confirm') && !statusEl.classList.contains('false_alarm');
         statusEl.style.display = 'inline-block';
         statusEl.className = 'finding-label-badge ' + labelValue;
         statusEl.textContent = labelValue === 'confirm' ? 'Confirmed by adjuster' : 'Marked false alarm';
+        if (wasUnlabeled) {
+          const countEl = document.getElementById('reviewed-count-text');
+          if (countEl) {
+            const m = countEl.textContent.match(/(\d+)\s+of\s+(\d+)/);
+            if (m) {
+              const cur = parseInt(m[1], 10) + 1;
+              const tot = parseInt(m[2], 10);
+              countEl.textContent = cur + ' of ' + tot + ' reviewed';
+            }
+          }
+        }
       }
     }
   } catch (err) {

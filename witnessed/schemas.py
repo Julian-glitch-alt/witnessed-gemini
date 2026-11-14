@@ -58,16 +58,35 @@ class VinReading(BaseModel):
     readable: bool = False
 
 
+class OdometerReading(BaseModel):
+    miles: int | None = None
+    readable: bool = False
+
+
 class Policy(BaseModel):
+    policy_number: str | None = None
+    insured_name: str | None = None
+    vehicle_year: int | str | None = None
     make: str | None = None
     model: str | None = None
     color: str | None = None
     plate: str | None = None
     state: str | None = None
+    vin: str | None = None
+    collision: bool = False
+    comprehensive: bool = False
+    liability_only: bool = False
+    deductible: int = 500
+    lienholder: str | None = None
+    effective_date: str | None = None
+    expiry_date: str | None = None
+    loss_date: str | None = None
+    incident_type: str | None = None
     claimant_name: str | None = None
     claimant_statement: str | None = None
     claimed_damage_area: str | None = None
     claimed_parts: list[str] = Field(default_factory=list)
+    skipped_slots: dict[str, str] = Field(default_factory=dict)
 
 
 class SummarySentence(BaseModel):

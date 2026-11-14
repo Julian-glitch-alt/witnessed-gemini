@@ -252,14 +252,204 @@ def check_parts_match(policy: Any, readings: Any) -> Finding:
         )
 
 
+def check_policy_active(policy: Any) -> Finding:
+    loss_date = _get_val(policy, "loss_date")
+    eff = _get_val(policy, "effective_date")
+    exp = _get_val(policy, "expiry_date")
+
+    if not loss_date or not str(loss_date).strip():
+        return Finding(
+            check="policy_active",
+            status="unchecked",
+            reason="Loss date has not been provided yet.",
+        )
+    if not eff or not exp:
+        return Finding(
+            check="policy_active",
+            status="unchecked",
+            reason="Policy effective and expiry dates are not available.",
+        )
+
+    l_str = str(loss_date).strip()
+    e_str = str(eff).strip()
+    x_str = str(exp).strip()
+
+    if e_str <= l_str <= x_str:
+        return Finding(
+            check="policy_active",
+            status="green",
+            reason=f"The loss date {l_str} is within the policy period ({e_str} – {x_str}).",
+        )
+    else:
+        return Finding(
+            check="policy_active",
+            status="red",
+            reason=f"The loss date {l_str} is outside the policy period ({e_str} – {x_str}).",
+        )
+
+
+def check_coverage_applies(policy: Any) -> Finding:
+    incident_raw = _get_val(policy, "incident_type")
+    if not incident_raw or not str(incident_raw).strip():
+        return Finding(
+            check="coverage_applies",
+            status="unchecked",
+            reason="Incident type has not been provided yet.",
+        )
+
+    incident = str(incident_raw).strip()
+    inc_lower = incident.lower()
+
+    is_liability_only = bool(_get_val(policy, "liability_only", False))
+    collision = bool(_get_val(policy, "collision", False))
+    comprehensive = bool(_get_val(policy, "comprehensive", False))
+    deductible = _get_val(policy, "deductible", 500)
+
+    if is_liability_only:
+        return Finding(
+            check="coverage_applies",
+            status="red",
+            reason=f"This policy carries liability only; {incident} damage to the insured car is not covered.",
+        )
+
+    is_collision_type = (
+        "crash" in inc_lower
+        or "hit and run" in inc_lower
+        or "single-car" in inc_lower
+        or "single car" in inc_lower
+    )
+
+    is_comprehensive_type = (
+        "animal" in inc_lower
+        or "vandalism" in inc_lower
+        or "break-in" in inc_lower
+        or "glass" in inc_lower
+        or "hail" in inc_lower
+        or "flood" in inc_lower
+        or "tree" in inc_lower
+        or "stolen" in inc_lower
+        or "theft" in inc_lower
+        or "fire" in inc_lower
+    )
+
+    if is_collision_type:
+        if collision:
+            return Finding(
+                check="coverage_applies",
+                status="green",
+                reason=f"Covered under Collision coverage (${deductible} deductible).",
+            )
+        else:
+            return Finding(
+                check="coverage_applies",
+                status="red",
+                reason=f"This policy does not carry collision coverage; {incident} damage to the insured car is not covered.",
+            )
+    elif is_comprehensive_type:
+        if comprehensive:
+            return Finding(
+                check="coverage_applies",
+                status="green",
+                reason=f"Covered under Comprehensive coverage (${deductible} deductible).",
+            )
+        else:
+            return Finding(
+                check="coverage_applies",
+                status="red",
+                reason=f"This policy does not carry comprehensive coverage; {incident} damage to the insured car is not covered.",
+            )
+    else:
+        return Finding(
+            check="coverage_applies",
+            status="unchecked",
+            reason=f"Incident type '{incident}' requires adjuster review for coverage applicability.",
+        )
+
+
+def check_vin_match(policy: Any, readings: Any) -> Finding:
+    policy_vin = _get_val(policy, "vin")
+    if not policy_vin or not str(policy_vin).strip():
+        return Finding(
+            check="vin_match",
+            status="unchecked",
+            reason="Policy does not have a VIN on file.",
+        )
+
+    if isinstance(readings, VinReading) or (hasattr(readings, "readable") and hasattr(readings, "vin")):
+        vin_reading = readings
+    else:
+        vin_reading = _get_val(readings, "vin")
+
+    if vin_reading is None:
+        return Finding(
+            check="vin_match",
+            status="unchecked",
+            reason="VIN photo reading is missing.",
+        )
+
+    readable = _get_val(vin_reading, "readable", False)
+    reading_vin = _get_val(vin_reading, "vin")
+    if not readable or not reading_vin or not str(reading_vin).strip():
+        return Finding(
+            check="vin_match",
+            status="unchecked",
+            reason="VIN is unreadable in photo.",
+        )
+
+    norm_policy = re.sub(r"[\s\-]+", "", str(policy_vin)).upper()
+    norm_reading = re.sub(r"[\s\-]+", "", str(reading_vin)).upper()
+
+    if norm_reading == norm_policy:
+        return Finding(
+            check="vin_match",
+            status="green",
+            reason="The VIN photo matches the policy.",
+        )
+    else:
+        return Finding(
+            check="vin_match",
+            status="red",
+            reason=f"The VIN photo ({norm_reading}) does not match the policy ({norm_policy}).",
+        )
+
+
+def check_photo_skipped(policy: Any) -> list[Finding]:
+    findings = []
+    skipped_slots = _get_val(policy, "skipped_slots") or {}
+    if isinstance(skipped_slots, dict):
+        for slot, reason in skipped_slots.items():
+            if reason:
+                findings.append(Finding(
+                    check="photo_skipped",
+                    status="amber",
+                    reason=f"The claimant skipped {slot}: {reason}",
+                ))
+    return findings
+
+
 def run_checks(
     policy: Any,
     readings: Any,
     photos: dict[str, str] | None = None,
     reused_photos: dict[str, str] | None = None,
+    include_coverage: bool | None = None,
 ) -> list[Finding]:
     """Execute the plain-code checks comparing policy, AI readings, and photos."""
     findings: list[Finding] = []
+
+    if include_coverage is None:
+        include_coverage = bool(
+            _get_val(policy, "policy_number")
+            or _get_val(policy, "effective_date")
+            or _get_val(policy, "vin")
+            or _get_val(policy, "liability_only")
+            or _get_val(policy, "collision")
+            or _get_val(policy, "comprehensive")
+        )
+
+    if include_coverage:
+        findings.append(check_policy_active(policy))
+        findings.append(check_coverage_applies(policy))
 
     # 1. plate_match
     policy_plate = _get_val(policy, "plate")
@@ -484,6 +674,10 @@ def run_checks(
                     reason=f"VIN {vin_str} failed ISO 3779 validation.",
                 ))
 
+    # 5b. vin_match
+    if include_coverage:
+        findings.append(check_vin_match(policy, readings))
+
     # 6. parts_match
     findings.append(check_parts_match(policy, readings))
 
@@ -491,5 +685,9 @@ def run_checks(
     if photos is not None:
         findings.append(check_duplicate_photo(photos))
         findings.append(check_photo_reused(photos, reused_photos))
+
+    # 9. photo_skipped
+    for f in check_photo_skipped(policy):
+        findings.append(f)
 
     return findings
