@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Claims Console - Witnessed{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+  <div>
+    <h1>Claims Console</h1>
+    <p class="subtitle">Review verified photo evidence and policy checks</p>
+  </div>
+  <a href="/console/new" class="btn btn-primary">+ New Claim</a>
+</div>
+
+<div class="card" style="padding: 0; overflow-x: auto;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Claim ID</th>
+        <th>Claimant</th>
+        <th>Policy Vehicle</th>
+        <th>Claimed Area</th>
+        <th>Status</th>
+        <th>Date</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for claim in claims %}
+      <tr>
+        <td>
+          <a href="/console/claims/{{ claim.id }}" style="color: var(--primary); font-weight: 600; text-decoration: none;">
+            {{ claim.id }}
+          </a>
+        </td>
+        <td>{{ claim.claimant_name or "N/A" }}</td>
+        <td>{{ claim.color }} {{ claim.make }} {{ claim.model }} ({{ claim.plate or "N/A" }})</td>
+        <td><span style="text-transform: capitalize;">{{ claim.claimed_damage_area or "N/A" }}</span></td>
+        <td>
+          {% if claim.status == 'approved' %}
+            <span class="pill pill-green">Approved</span>
+          {% elif claim.status == 'ready_for_review' %}
+            <span class="pill pill-amber">Ready for Review</span>
+          {% elif claim.status == 'escalated_to_siu' %}
+            <span class="pill pill-red">Escalated SIU</span>
+          {% elif claim.status == 'recapture_requested' %}
+            <span class="pill pill-amber">Recapture Req</span>
+          {% else %}
+            <span class="pill pill-gray">{{ claim.status }}</span>
+          {% endif %}
+        </td>
+        <td style="color: var(--text-muted); font-size: 0.85rem;">{{ claim.created_at[:16].replace('T', ' ') }}</td>
+        <td>
+          <a href="/console/claims/{{ claim.id }}" class="btn btn-outline" style="padding: 0.35rem 0.75rem; font-size: 0.82rem;">
+            View
+          </a>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+          No claims yet. Click <strong>+ New Claim</strong> to create one.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

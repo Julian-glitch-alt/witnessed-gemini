@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}Claim {{ claim.id }} - Witnessed{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+  <a href="/console" style="color: var(--text-muted); text-decoration: none; font-size: 0.9rem;">&larr; Back to Claims</a>
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-top: 0.5rem;">
+    <div>
+      <h1>Claim {{ claim.id }}</h1>
+      <p class="subtitle" style="margin-bottom: 0;">
+        Policy Vehicle: <strong>{{ claim.color }} {{ claim.make }} {{ claim.model }}</strong> &bull; Plate: <strong>{{ claim.plate }} ({{ claim.state }})</strong>
+      </p>
+    </div>
+    <div style="text-align: right;">
+      {% if claim.status == 'approved' %}
+        <span class="pill pill-green" style="font-size: 0.9rem;">Approved</span>
+      {% elif claim.status == 'ready_for_review' %}
+        <span class="pill pill-amber" style="font-size: 0.9rem;">Ready for Review</span>
+      {% elif claim.status == 'escalated_to_siu' %}
+        <span class="pill pill-red" style="font-size: 0.9rem;">Escalated SIU</span>
+      {% elif claim.status == 'recapture_requested' %}
+        <span class="pill pill-amber" style="font-size: 0.9rem;">Recapture Requested</span>
+      {% else %}
+        <span class="pill pill-gray" style="font-size: 0.9rem;">{{ claim.status }}</span>
+      {% endif %}
+      <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">
+        Session: {{ session.session_code if session else "N/A" }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Summary Line -->
+<div class="card" style="background: var(--bg-card); border-left: 4px solid var(--primary); padding: 1rem 1.25rem;">
+  <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.25rem;">
+    Evidence Summary (Deterministic Rule Engine)
+  </div>
+  <div style="font-size: 1.05rem; font-weight: 600; color: var(--text-main);">
+    {{ summary_line }}
+  </div>
+</div>
+
+<!-- Digital Seal Status -->
+<div class="card" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.25rem;">
+  <div>
+    <strong>Digital Seal & Authenticity</strong>
+    <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;">
+      {% if is_valid_seal is true %}
+        <span class="pill pill-green">Sealed & Verified</span>
+        <span style="margin-left: 0.5rem;">Ed25519 digital signature is cryptographically valid.</span>
+      {% elif is_valid_seal is false %}
+        <span class="pill pill-red">Signature Mismatch</span>
+        <span style="margin-left: 0.5rem;">Warning: package data or signature has been tampered with!</span>
+      {% else %}
+        <span class="pill pill-gray">Unsealed</span>
+        <span style="margin-left: 0.5rem;">Photos not yet submitted or sealed.</span>
+      {% endif %}
+    </div>
+  </div>
+  {% if claim.package_bytes %}
+  <div>
+    <a href="/console/claims/{{ claim.id }}/package" class="btn btn-outline" download>
+      Download Sealed Package (.json) &darr;
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Evidence Photos -->
+<div class="card">
+  <h2>Evidence Photos (Live Capture)</h2>
+  <div class="photo-grid">
+    {% set slots = ['wide', 'damage', 'plate', 'vin'] %}
+    {% for slot in slots %}
+      {% set photo = photos.get(slot) %}
+      <div class="photo-card">
+        <div class="photo-card-header">
+          <span style="text-transform: uppercase;">{{ slot }}</span>
+          {% if photo %}
+            <span class="pill pill-green" style="font-size: 0.65rem; padding: 0.1rem 0.4rem;">Captured</span>
+          {% else %}
+            <span class="pill pill-gray" style="font-size: 0.65rem; padding: 0.1rem 0.4rem;">Missing</span>
+          {% endif %}
+        </div>
+        {% if photo %}
+          <img src="/photos/{{ photo.sha256 }}" alt="{{ slot }} photo" class="photo-card-img">
+          <div class="photo-card-footer">
+            SHA: {{ photo.sha256[:16] }}...
+          </div>
+        {% else %}
+          <div class="photo-card-img" style="display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.85rem;">
+            No photo yet
+          </div>
+          <div class="photo-card-footer" style="color: var(--text-muted);">
+            Pending capture
+          </div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Automated Findings -->
+<div class="card" style="padding: 0; overflow-x: auto;">
+  <div style="padding: 1.25rem 1.5rem 0.5rem;">
+    <h2>Automated Findings</h2>
+    <p class="subtitle" style="margin-bottom: 0.5rem;">Pure code rules comparing policy data with structured AI photo readings</p>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 200px;">Check</th>
+        <th style="width: 140px;">Status</th>
+        <th>Reasoning & Observation</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for finding in findings %}
+      <tr class="findings-row-{{ finding.status }}">
+        <td style="font-weight: 600; font-family: monospace; font-size: 0.95rem;">
+          {{ finding.check_name }}
+        </td>
+        <td>
+          {% if finding.status == 'green' %}
+            <span class="pill pill-green">Pass</span>
+          {% elif finding.status == 'amber' %}
+            <span class="pill pill-amber">Warning</span>
+          {% elif finding.status == 'red' %}
+            <span class="pill pill-red">Mismatch</span>
+          {% else %}
+            <span class="pill pill-gray">Unchecked</span>
+          {% endif %}
+        </td>
+        <td style="font-size: 0.92rem;">
+          {{ finding.reason }}
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="3" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+          No findings generated yet. Evidence submission is pending.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Claimant & Policy Summary -->
+<div class="card">
+  <h2>Claim & Policy Context</h2>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem;">
+    <div>
+      <div style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Claimant Statement</div>
+      <p style="margin-top: 0.25rem; font-size: 0.95rem; font-style: italic;">"{{ claim.claimant_statement }}"</p>
+      <div style="margin-top: 0.75rem; font-size: 0.85rem;">
+        Claimant: <strong>{{ claim.claimant_name }}</strong> &bull; Claimed Damage: <strong>{{ claim.claimed_damage_area }}</strong>
+      </div>
+    </div>
+    <div>
+      <div style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Policy Record</div>
+      <div style="margin-top: 0.25rem; font-size: 0.95rem;">
+        {{ claim.color }} {{ claim.make }} {{ claim.model }}
+      </div>
+      <div style="font-size: 0.85rem; color: var(--text-muted);">
+        Plate: {{ claim.plate }} ({{ claim.state }})
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Adjuster Decision Panel -->
+<div class="card" style="border: 2px solid var(--border);">
+  <h2>Adjuster Decision</h2>
+  <p class="subtitle" style="margin-bottom: 1rem;">
+    The AI reads and code checks; the human adjuster decides. No automatic rejections.
+  </p>
+
+  <form action="/console/claims/{{ claim.id }}/decision" method="post">
+    <div class="form-group">
+      <label for="note">Decision Note (optional)</label>
+      <input type="text" id="note" name="note" class="form-control" placeholder="Add rationale or notes for claim file...">
+    </div>
+
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem;">
+      <button type="submit" name="action" value="approve" class="btn btn-approve">
+        &#10003; Approve
+      </button>
+      <button type="submit" name="action" value="recapture" class="btn btn-recapture">
+        &#8634; Request recapture
+      </button>
+      <button type="submit" name="action" value="escalate" class="btn btn-escalate">
+        &#9888; Escalate to SIU
+      </button>
+    </div>
+  </form>
+
+  {% if decisions %}
+  <div style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+    <h3 style="font-size: 0.95rem; color: var(--text-muted); text-transform: uppercase;">Decision Log</h3>
+    <ul style="list-style: none; margin-top: 0.5rem;">
+      {% for d in decisions %}
+      <li style="padding: 0.4rem 0; font-size: 0.88rem; border-bottom: 1px solid var(--border);">
+        <strong>{{ d.action | capitalize }}</strong>
+        {% if d.note %} &mdash; <em>{{ d.note }}</em>{% endif %}
+        <span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 0.5rem;">({{ d.timestamp[:19].replace('T', ' ') }})</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

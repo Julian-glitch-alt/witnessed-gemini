@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Claim Created - Witnessed{% endblock %}
+
+{% block content %}
+<div style="max-width: 680px; margin: 0 auto;">
+  <div class="alert-box alert-success">
+    <span>&#10003;</span>
+    <div>
+      <strong>Claim {{ claim.id }} Created Successfully</strong>
+      <div style="font-size: 0.85rem;">Session Code: <strong>{{ session_code }}</strong></div>
+    </div>
+  </div>
+
+  <div class="card" style="text-align: center; padding: 2rem 1.5rem;">
+    <h2 style="margin-bottom: 0.5rem;">Claimant Evidence Capture</h2>
+    <p class="subtitle" style="margin-bottom: 1.5rem;">Send this link or show this QR code to the claimant to capture photos from their phone</p>
+
+    <div style="margin: 1.5rem auto; display: inline-block; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: #ffffff;">
+      <img src="{{ qr_data_uri }}" alt="QR Code for Evidence Capture" style="display: block; width: 220px; height: 220px;">
+      <div style="margin-top: 0.5rem; font-family: monospace; font-size: 1.1rem; font-weight: 700; color: var(--primary);">
+        Code: {{ session_code }}
+      </div>
+    </div>
+
+    <div style="margin: 1.5rem 0;">
+      <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.4rem;">
+        Capture URL
+      </label>
+      <div style="display: flex; gap: 0.5rem; max-width: 500px; margin: 0 auto;">
+        <input type="text" id="capture-url-input" class="form-control" value="{{ capture_url }}" readonly style="font-family: monospace; font-size: 0.9rem;">
+        <button type="button" class="btn btn-outline" onclick="copyCaptureUrl()">Copy</button>
+      </div>
+      <div style="margin-top: 0.5rem;">
+        <a href="{{ capture_url }}" target="_blank" style="font-size: 0.85rem; color: var(--primary);">Open Capture Page &nearr;</a>
+      </div>
+    </div>
+
+    <div style="margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1.5rem; display: flex; justify-content: center; gap: 1rem;">
+      <a href="/console" class="btn btn-outline">Back to Claims</a>
+      <a href="/console/claims/{{ claim.id }}" class="btn btn-primary">View Claim Report</a>
+    </div>
+  </div>
+</div>
+
+<script>
+function copyCaptureUrl() {
+  const input = document.getElementById('capture-url-input');
+  input.select();
+  navigator.clipboard.writeText(input.value);
+  alert('Capture URL copied to clipboard!');
+}
+</script>
+{% endblock %}

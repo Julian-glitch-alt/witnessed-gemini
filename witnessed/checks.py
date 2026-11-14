@@ -36,6 +36,45 @@ def _normalize_area(val: str | None) -> str | None:
     return cleaned
 
 
+COLOR_FAMILIES: dict[str, list[str]] = {
+    "blue": ["blue", "navy", "azure", "cobalt", "indigo", "teal", "cyan"],
+    "gray": ["gray", "grey", "silver", "charcoal", "gunmetal", "slate", "pewter"],
+    "white": ["white", "pearl", "ivory", "cream"],
+    "black": ["black", "onyx"],
+    "red": ["red", "maroon", "burgundy", "crimson", "scarlet", "cherry", "ruby", "wine"],
+    "green": ["green", "olive", "emerald", "lime"],
+    "yellow": ["yellow", "gold"],
+    "brown": ["brown", "tan", "beige", "bronze", "khaki"],
+    "orange": ["orange", "copper", "rust"],
+    "purple": ["purple", "violet", "magenta"],
+}
+
+
+def _normalize_make(val: Any) -> str:
+    if not val:
+        return ""
+    cleaned = re.sub(r"[^\w\s]", " ", str(val)).lower()
+    return " ".join(cleaned.split())
+
+
+def _color_family(val: Any) -> str:
+    if not val:
+        return ""
+    cleaned = re.sub(r"[^\w\s]", " ", str(val)).lower()
+    words = cleaned.split()
+    if not words:
+        return ""
+    for family, aliases in COLOR_FAMILIES.items():
+        for alias in aliases:
+            if alias in words or alias == cleaned:
+                return family
+    modifiers = {"dark", "light", "metallic", "deep", "bright", "matte", "glossy", "pale", "clear"}
+    filtered = [w for w in words if w not in modifiers]
+    if filtered:
+        return " ".join(filtered)
+    return " ".join(words)
+
+
 def run_checks(policy: Any, readings: Any) -> list[Finding]:
     """Execute the five plain-code checks comparing policy and AI readings."""
     findings: list[Finding] = []
@@ -110,13 +149,18 @@ def run_checks(policy: Any, readings: Any) -> list[Finding]:
                 reason="Vehicle make and color could not be determined from wide photo.",
             ))
         else:
+            norm_policy_make = _normalize_make(policy_make)
+            norm_reading_make = _normalize_make(reading_make)
             make_mismatch = (
                 not make_unsure
-                and str(reading_make).strip().lower() != str(policy_make).strip().lower()
+                and norm_reading_make != norm_policy_make
             )
+
+            norm_policy_color = _color_family(policy_color)
+            norm_reading_color = _color_family(reading_color)
             color_mismatch = (
                 not color_unsure
-                and str(reading_color).strip().lower() != str(policy_color).strip().lower()
+                and norm_reading_color != norm_policy_color
             )
 
             if make_mismatch or color_mismatch:

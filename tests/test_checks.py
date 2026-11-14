@@ -226,3 +226,53 @@ def test_all_missing_readings_give_all_unchecked(clean_policy):
     assert len(findings) == 5
     for f in findings:
         assert f.status == "unchecked"
+
+
+def test_vehicle_match_color_families_and_punctuation():
+    # Make with punctuation and casing
+    policy = Policy(
+        make="Mercedes-Benz",
+        model="C-Class",
+        color="dark blue",
+        plate="ABC1234",
+        claimed_damage_area="rear",
+    )
+    readings = {
+        "wide": WideReading(make="mercedes benz", color="navy"),
+    }
+    findings = run_checks(policy, readings)
+    assert _finding_map(findings)["vehicle_match"].status == "green"
+
+    # Gray family: silver vs grey, gray
+    policy.color = "silver"
+    readings["wide"] = WideReading(make="Mercedes-Benz", color="grey")
+    findings = run_checks(policy, readings)
+    assert _finding_map(findings)["vehicle_match"].status == "green"
+
+    readings["wide"] = WideReading(make="Mercedes-Benz", color="gray")
+    findings = run_checks(policy, readings)
+    assert _finding_map(findings)["vehicle_match"].status == "green"
+
+    # White family: white vs pearl
+    policy.color = "pearl"
+    readings["wide"] = WideReading(make="Mercedes-Benz", color="white")
+    findings = run_checks(policy, readings)
+    assert _finding_map(findings)["vehicle_match"].status == "green"
+
+    # Red family: red vs maroon
+    policy.color = "maroon"
+    readings["wide"] = WideReading(make="Mercedes-Benz", color="red")
+    findings = run_checks(policy, readings)
+    assert _finding_map(findings)["vehicle_match"].status == "green"
+
+    # Other colors: yellow vs yellow
+    policy.color = "yellow"
+    readings["wide"] = WideReading(make="Mercedes-Benz", color="yellow")
+    findings = run_checks(policy, readings)
+    assert _finding_map(findings)["vehicle_match"].status == "green"
+
+    # Other colors mismatch: yellow vs green
+    readings["wide"] = WideReading(make="Mercedes-Benz", color="green")
+    findings = run_checks(policy, readings)
+    assert _finding_map(findings)["vehicle_match"].status == "amber"
+

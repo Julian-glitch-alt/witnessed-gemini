@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Witnessed - Verified Photo Evidence{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="app-header">
+    <a href="/console" class="brand-title">
+      <span>Witnessed</span>
+      <span class="brand-badge">Auto Claims</span>
+    </a>
+    <nav class="nav-links">
+      <a href="/console">Claims Console</a>
+      <a href="/console/new">+ New Claim</a>
+      <a href="/verify">Verify Package</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

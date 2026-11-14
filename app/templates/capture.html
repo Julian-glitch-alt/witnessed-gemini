@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Witnessed Evidence Capture - {{ session_code }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="capture-body">
+
+  <div class="fixed-session-banner">
+    <div>Witnessed Evidence</div>
+    <div>Session: <span class="session-pill">{{ session_code }}</span></div>
+  </div>
+
+  <div class="capture-container">
+    <!-- Progress Indicator -->
+    <div class="slot-progress-bar">
+      <div id="step-wide" class="slot-step active">1. Wide</div>
+      <div id="step-damage" class="slot-step">2. Damage</div>
+      <div id="step-plate" class="slot-step">3. Plate</div>
+      <div id="step-vin" class="slot-step">4. VIN</div>
+    </div>
+
+    <!-- Active Instruction -->
+    <div id="slot-instruction" class="slot-instruction">
+      <strong id="instruction-title">Step 1 of 4: Whole Vehicle</strong>
+      <div id="instruction-desc">Capture a wide shot showing the entire vehicle.</div>
+    </div>
+
+    <!-- Live Viewport / Preview -->
+    <div class="camera-viewport">
+      <video id="camera-feed" autoplay playsinline muted></video>
+      <img id="preview-img" alt="Captured Photo Preview">
+      <div id="camera-error" class="camera-error-message">
+        <strong>Camera Unavailable</strong>
+        <p style="margin-top: 0.5rem; font-size: 0.85rem;">
+          A live camera is strictly required to capture verified evidence for this claim. Please enable camera access in your browser permissions and refresh the page.
+        </p>
+      </div>
+    </div>
+
+    <canvas id="capture-canvas" style="display: none;"></canvas>
+
+    <!-- Controls -->
+    <div class="capture-controls">
+      <div id="retake-info" style="font-size: 0.82rem; text-align: center; color: #94a3b8; display: none;">
+        Retakes remaining for this slot: <span id="retake-count" style="font-weight: 700; color: #ffffff;">3</span>
+      </div>
+
+      <button type="button" id="btn-capture" class="btn-capture">
+        &#128247; Take Photo
+      </button>
+
+      <div id="preview-actions" style="display: none; gap: 0.5rem;">
+        <button type="button" id="btn-retake" class="btn btn-outline" style="flex: 1; min-height: 46px; background: #1e293b; color: #ffffff; border-color: #334155;">
+          Retake Photo
+        </button>
+        <button type="button" id="btn-next" class="btn btn-primary" style="flex: 1; min-height: 46px;">
+          Next Slot &rarr;
+        </button>
+      </div>
+
+      <div style="margin-top: 0.5rem;">
+        <button type="button" id="btn-submit" class="btn-submit-photos" disabled>
+          Submit All 4 Photos
+        </button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const TOKEN = "{{ token }}";
+const SLOTS = [
+  { id: "wide", title: "Step 1 of 4: Whole Vehicle", desc: "Capture a wide shot showing the entire vehicle." },
+  { id: "damage", title: "Step 2 of 4: Close-up Damage", desc: "Capture a clear close-up of the vehicle damage." },
+  { id: "plate", title: "Step 3 of 4: License Plate", desc: "Capture a clear, readable photo of the vehicle license plate." },
+  { id: "vin", title: "Step 4 of 4: VIN Plate / Sticker", desc: "Capture a clear photo of the VIN sticker or dashboard plate." }
+];
+
+let currentSlotIndex = 0;
+let photos = {
+  wide: null,
+  damage: null,
+  plate: null,
+  vin: null
+};
+let retakeCounts = {
+  wide: 0,
+  damage: 0,
+  plate: 0,
+  vin: 0
+};
+
+const video = document.getElementById("camera-feed");
+const canvas = document.getElementById("capture-canvas");
+const previewImg = document.getElementById("preview-img");
+const cameraError = document.getElementById("camera-error");
+const btnCapture = document.getElementById("btn-capture");
+const btnRetake = document.getElementById("btn-retake");
+const btnNext = document.getElementById("btn-next");
+const btnSubmit = document.getElementById("btn-submit");
+const previewActions = document.getElementById("preview-actions");
+const retakeInfo = document.getElementById("retake-info");
+const retakeCountSpan = document.getElementById("retake-count");
+const instructionTitle = document.getElementById("instruction-title");
+const instructionDesc = document.getElementById("instruction-desc");
+
+// Initialize live camera
+async function initCamera() {
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("getUserMedia not supported");
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+  } catch (err) {
+    video.style.display = "none";
+    btnCapture.disabled = true;
+    cameraError.style.display = "block";
+  }
+}
+
+function updateSlotUI() {
+  const slot = SLOTS[currentSlotIndex];
+  instructionTitle.textContent = slot.title;
+  instructionDesc.textContent = slot.desc;
+
+  SLOTS.forEach((s, idx) => {
+    const el = document.getElementById("step-" + s.id);
+    el.classList.remove("active");
+    if (photos[s.id]) {
+      el.classList.add("completed");
+    } else {
+      el.classList.remove("completed");
+    }
+    if (idx === currentSlotIndex) {
+      el.classList.add("active");
+    }
+  });
+
+  const slotPhoto = photos[slot.id];
+  const retakesLeft = Math.max(0, 3 - retakeCounts[slot.id]);
+  retakeCountSpan.textContent = retakesLeft;
+
+  if (slotPhoto) {
+    video.style.display = "none";
+    previewImg.src = "/photos/" + slotPhoto.sha256;
+    previewImg.style.display = "block";
+    btnCapture.style.display = "none";
+    previewActions.style.display = "flex";
+    retakeInfo.style.display = "block";
+
+    if (retakesLeft <= 0) {
+      btnRetake.disabled = true;
+      btnRetake.textContent = "No retakes left";
+    } else {
+      btnRetake.disabled = false;
+      btnRetake.textContent = "Retake (" + retakesLeft + " left)";
+    }
+  } else {
+    previewImg.style.display = "none";
+    video.style.display = "block";
+    btnCapture.style.display = "block";
+    previewActions.style.display = "none";
+    retakeInfo.style.display = "none";
+  }
+
+  // Check if all 4 slots completed
+  const allCompleted = SLOTS.every(s => photos[s.id] !== null);
+  btnSubmit.disabled = !allCompleted;
+}
+
+btnCapture.addEventListener("click", async () => {
+  const slot = SLOTS[currentSlotIndex];
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  canvas.toBlob(async (blob) => {
+    btnCapture.disabled = true;
+    btnCapture.textContent = "Uploading...";
+
+    try {
+      const resp = await fetch("/c/" + TOKEN + "/photo/" + slot.id, {
+        method: "POST",
+        headers: { "Content-Type": "image/jpeg" },
+        body: blob
+      });
+
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        alert(errData.detail || "Failed to upload photo.");
+        btnCapture.disabled = false;
+        btnCapture.textContent = "Take Photo";
+        return;
+      }
+
+      const data = await resp.json();
+      photos[slot.id] = data;
+      btnCapture.disabled = false;
+      btnCapture.textContent = "Take Photo";
+      updateSlotUI();
+    } catch (e) {
+      alert("Network error while uploading photo. Please try again.");
+      btnCapture.disabled = false;
+      btnCapture.textContent = "Take Photo";
+    }
+  }, "image/jpeg", 0.9);
+});
+
+btnRetake.addEventListener("click", () => {
+  const slot = SLOTS[currentSlotIndex];
+  if (retakeCounts[slot.id] >= 3) return;
+  retakeCounts[slot.id] += 1;
+  photos[slot.id] = null;
+  updateSlotUI();
+});
+
+btnNext.addEventListener("click", () => {
+  if (currentSlotIndex < SLOTS.length - 1) {
+    currentSlotIndex++;
+  } else {
+    // Wrap to first incomplete slot if any
+    const firstIncomplete = SLOTS.findIndex(s => photos[s.id] === null);
+    if (firstIncomplete !== -1) {
+      currentSlotIndex = firstIncomplete;
+    }
+  }
+  updateSlotUI();
+});
+
+SLOTS.forEach((s, idx) => {
+  document.getElementById("step-" + s.id).addEventListener("click", () => {
+    currentSlotIndex = idx;
+    updateSlotUI();
+  });
+});
+
+btnSubmit.addEventListener("click", async () => {
+  btnSubmit.disabled = true;
+  btnSubmit.textContent = "Submitting Claim Photos...";
+
+  try {
+    const resp = await fetch("/c/" + TOKEN + "/submit", {
+      method: "POST",
+      headers: { "Accept": "application/json" }
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      alert(err.detail || "Submission failed.");
+      btnSubmit.disabled = false;
+      btnSubmit.textContent = "Submit All 4 Photos";
+      return;
+    }
+
+    const data = await resp.json();
+    if (data.redirect) {
+      window.location.href = data.redirect;
+    } else {
+      window.location.href = "/c/" + TOKEN + "/complete";
+    }
+  } catch (e) {
+    alert("Network error submitting photos. Please try again.");
+    btnSubmit.disabled = false;
+    btnSubmit.textContent = "Submit All 4 Photos";
+  }
+});
+
+// Load existing photos if any
+{% if existing_photos %}
+const serverPhotos = {{ existing_photos | tojson }};
+for (const [slot, photo] of Object.entries(serverPhotos)) {
+  if (photo) {
+    photos[slot] = photo;
+  }
+}
+{% endif %}
+{% if retake_counts %}
+const serverRetakes = {{ retake_counts | tojson }};
+for (const [slot, count] of Object.entries(serverRetakes)) {
+  retakeCounts[slot] = count;
+}
+{% endif %}
+
+initCamera();
+updateSlotUI();
+</script>
+</body>
+</html>

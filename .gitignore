@@ -8,3 +8,4 @@ data/
 seal_key*
 node_modules/
 test-results/
+app/__pycache__/

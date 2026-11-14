@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Verify Evidence Package - Witnessed{% endblock %}
+
+{% block content %}
+<div style="max-width: 680px; margin: 0 auto;">
+  <div style="margin-bottom: 1.5rem;">
+    <h1>Verify Evidence Package</h1>
+    <p class="subtitle">Upload a sealed claim package file to verify its cryptographic Ed25519 signature</p>
+  </div>
+
+  {% if result_message %}
+    {% if result_status == 'valid' %}
+      <div class="alert-box alert-success" style="font-size: 1.1rem; font-weight: 700;">
+        <span>&#10003;</span>
+        <div>Valid signature</div>
+      </div>
+      <div class="card" style="margin-top: -0.5rem; margin-bottom: 1.5rem; font-size: 0.95rem; color: var(--text-muted);">
+        The package signature matches the server's public key. The claim data, findings, and photo hashes have not been altered.
+      </div>
+    {% else %}
+      <div class="alert-box alert-danger" style="font-size: 1.1rem; font-weight: 700;">
+        <span>&#9888;</span>
+        <div>Signature does not match: package was altered</div>
+      </div>
+      <div class="card" style="margin-top: -0.5rem; margin-bottom: 1.5rem; font-size: 0.95rem; color: var(--text-muted);">
+        Verification failed. The package contents or signature do not match the expected cryptographic seal.
+      </div>
+    {% endif %}
+  {% endif %}
+
+  <div class="card">
+    <form action="/verify" method="post" enctype="multipart/form-data">
+      <div class="form-group">
+        <label for="package_file">Select Sealed Package JSON File</label>
+        <input type="file" id="package_file" name="package_file" class="form-control" accept=".json,application/json" required>
+        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.35rem;">
+          Upload the <code>.json</code> file downloaded from any claim report.
+        </div>
+      </div>
+
+      <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end;">
+        <button type="submit" class="btn btn-primary">Verify Package Signature</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
