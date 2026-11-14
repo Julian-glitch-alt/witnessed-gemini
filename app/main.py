@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 import hashlib
 import io
 import json
+import logging
 import os
 from pathlib import Path
 import random
@@ -18,7 +19,7 @@ import qrcode
 
 from app.db import get_connection, get_data_dir, init_db
 from witnessed.checks import run_checks
-from witnessed.providers import get_provider
+from witnessed.providers import FakeProvider, get_provider
 from witnessed.schemas import (
     DamageReading,
     Finding,
@@ -48,6 +49,8 @@ HUMAN_LABELS: dict[str, str] = {
     "duplicate_photo": "Duplicate photo",
     "photo_reused": "Photo reused",
 }
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -549,16 +552,31 @@ async def upload_photo(request: Request, token: str, slot: str):
     with open(photo_path, "wb") as f:
         f.write(photo_bytes)
 
-    provider = get_provider()
-    reading = provider.read(slot, photo_bytes)
+    try:
+        provider = get_provider()
+    except Exception as exc:
+        logger.exception("Error obtaining provider: %s", exc)
+        provider = None
+
+    reading = None
+    if provider is not None:
+        try:
+            reading = provider.read(slot, photo_bytes)
+        except Exception as exc:
+            logger.exception("Provider error reading photo for slot %s: %s", slot, exc)
+            reading = None
+
     reading_json = (
         reading.model_dump_json()
         if hasattr(reading, "model_dump_json")
         else (json.dumps(reading) if reading else None)
     )
     status = "read" if reading is not None else "unchecked"
-    model_used = getattr(provider, "last_model", None) or (
-        "fake" if isinstance(provider, FakeProvider) else "gemini"
+    model_used = (
+        getattr(provider, "last_model", None)
+        or getattr(provider, "model", None)
+        or getattr(provider, "name", None)
+        or ("fake" if isinstance(provider, FakeProvider) else "gemini")
     )
     now_iso = datetime.now(timezone.utc).isoformat()
 
@@ -686,6 +704,12 @@ async def submit_capture(request: Request, token: str):
     findings = run_checks(policy, readings, photos=photo_hashes, reused_photos=reused_photos)
     now_iso = datetime.now(timezone.utc).isoformat()
 
+    try:
+        provider = get_provider()
+    except Exception as exc:
+        logger.exception("Error obtaining provider: %s", exc)
+        provider = None
+
     package_data = {
         "claim": {
             "id": claim["id"],
@@ -707,7 +731,12 @@ async def submit_capture(request: Request, token: str):
                 "model": (
                     latest_photos[slot]["model"]
                     if "model" in latest_photos[slot].keys() and latest_photos[slot]["model"]
-                    else "fake"
+                    else (
+                        getattr(provider, "last_model", None)
+                        or getattr(provider, "model", None)
+                        or getattr(provider, "name", None)
+                        or ("fake" if isinstance(provider, FakeProvider) else "gemini")
+                    )
                 ),
                 "reading": (r.model_dump() if r and hasattr(r, "model_dump") else r),
             }
@@ -722,8 +751,14 @@ async def submit_capture(request: Request, token: str):
 
     pkg_bytes, sig_b64 = seal(package_data)
 
-    provider = get_provider()
-    ai_summary_dict = summarize(findings, provider)
+    ai_summary_dict = None
+    if provider is not None:
+        try:
+            ai_summary_dict = summarize(findings, provider)
+        except Exception as exc:
+            logger.exception("Provider error generating summary during submit: %s", exc)
+            ai_summary_dict = None
+
     ai_summary_json = json.dumps(ai_summary_dict)
 
     with conn:
@@ -863,8 +898,12 @@ async def claim_report(request: Request, id: str):
         except Exception:
             ai_summary = None
     elif findings:
-        provider = get_provider()
-        ai_summary = summarize(findings, provider)
+        try:
+            provider = get_provider()
+            ai_summary = summarize(findings, provider)
+        except Exception as exc:
+            logger.exception("Provider error generating summary for report: %s", exc)
+            ai_summary = None
 
     group_definitions = [
         {

@@ -1,5 +1,8 @@
+import logging
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_finding(f: Any) -> dict[str, str]:
@@ -79,7 +82,12 @@ def summarize(findings: list[Any], provider: Any) -> dict | None:
     findings_data = [_normalize_finding(f) for f in findings]
 
     # Attempt 1
-    result = provider.summarize(findings_data)
+    try:
+        result = provider.summarize(findings_data)
+    except Exception as exc:
+        logger.exception("Provider error during summarize attempt 1: %s", exc)
+        result = None
+
     failures = _verify_summary(result, findings_data)
     if not failures:
         return result
@@ -90,7 +98,11 @@ def summarize(findings: list[Any], provider: Any) -> dict | None:
         + "\n".join(f"- {f}" for f in failures)
         + "\nPlease fix these errors and regenerate."
     )
-    result2 = provider.summarize(findings_data, retry_prompt=retry_prompt)
+    try:
+        result2 = provider.summarize(findings_data, retry_prompt=retry_prompt)
+    except Exception as exc:
+        logger.exception("Provider error during summarize attempt 2: %s", exc)
+        result2 = None
     failures2 = _verify_summary(result2, findings_data)
     if not failures2:
         return result2

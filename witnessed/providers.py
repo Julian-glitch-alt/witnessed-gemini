@@ -51,6 +51,8 @@ SLOT_PROMPTS: dict[str, str] = {
 
 @runtime_checkable
 class ReadingProvider(Protocol):
+    name: str
+
     def read(
         self, slot: str, image_bytes: bytes
     ) -> WideReading | DamageReading | PlateReading | VinReading | None:
@@ -88,6 +90,7 @@ CANNED_BAD_SUMMARY = {
 class FakeProvider:
     """Returns canned readings for tests, defaulting to a clean matching vehicle case."""
 
+    name: str = "fake"
     CANNED_GOOD_SUMMARY = CANNED_GOOD_SUMMARY
     CANNED_BAD_SUMMARY = CANNED_BAD_SUMMARY
 
@@ -97,6 +100,7 @@ class FakeProvider:
         canned_summaries: list[Any] | None = None,
         model: str | None = None,
     ):
+        self.name = "fake"
         self.canned_readings: dict[str, Any] = dict(canned_readings) if canned_readings else {}
         self.canned_summaries: list[Any] = list(canned_summaries) if canned_summaries is not None else []
         self.summary_calls: list[dict[str, Any]] = []
@@ -211,7 +215,10 @@ def _is_transport_error(err: Exception) -> bool:
 class GeminiProvider:
     """Official Google Gemini provider using google-genai structured JSON output."""
 
+    name: str = "gemini"
+
     def __init__(self, api_key: str | None = None, model: str | None = None):
+        self.name = "gemini"
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
         model_val = model or os.environ.get("GEMINI_MODEL")
         if model_val:
@@ -222,7 +229,7 @@ class GeminiProvider:
         else:
             self.models = []
         self.model = self.models[0] if self.models else None
-        self.last_model = None
+        self.last_model = self.model
         self._client = None
 
     def _get_client(self):
@@ -262,7 +269,10 @@ class GeminiProvider:
         except ImportError:
             types = None
 
-        client = self._get_client()
+        try:
+            client = self._get_client()
+        except Exception:
+            return None
 
         for m_idx, current_model in enumerate(self.models):
             has_next = m_idx < len(self.models) - 1
@@ -345,7 +355,10 @@ class GeminiProvider:
         except ImportError:
             types = None
 
-        client = self._get_client()
+        try:
+            client = self._get_client()
+        except Exception:
+            return None
 
         for m_idx, current_model in enumerate(self.models):
             has_next = m_idx < len(self.models) - 1
